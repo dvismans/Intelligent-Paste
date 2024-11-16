@@ -7,10 +7,14 @@ const port = chrome.runtime.connect({ name: 'devtools-page' });
 port.onMessage.addListener(message => {
     if (message.type === 'log') {
         const logEntry = document.createElement('div');
+        logEntry.className = 'log-entry';
         logEntry.textContent = message.data;
         logsDiv.appendChild(logEntry);
         
         // Auto-scroll to bottom
         logsDiv.scrollTop = logsDiv.scrollHeight;
     }
-}); 
+});
+
+// Send initial connection message
+port.postMessage({ type: 'init' }); 

@@ -59,6 +59,9 @@ function debugLog(message, data = null) {
 // Add this at the top of the file
 let isProcessingPaste = false;
 
+// Add this at the top of the file with other global variables
+let currentFloatingWindow = null;
+
 // Update the common styles object
 const commonStyles = {
     backdrop: `
@@ -333,8 +336,13 @@ async function captureVisibleTab() {
     }
 }
 
-// Add function to create floating window
-function createFloatingClipboardWindow(clipboardText, imageBase64) {
+// Update createFloatingClipboardWindow function
+function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo = null) {
+    // Remove existing floating window if it exists
+    if (currentFloatingWindow) {
+        currentFloatingWindow.remove();
+    }
+
     const container = document.createElement('div');
     container.style.cssText = commonStyles.floatingWindow;
 
@@ -359,60 +367,212 @@ function createFloatingClipboardWindow(clipboardText, imageBase64) {
     const content = document.createElement('div');
     content.style.cssText = commonStyles.contentSection;
 
-    // Add text content if available
-    if (clipboardText) {
-        // Split text into logical chunks (e.g., by lines or other patterns)
-        const chunks = clipboardText.split(/[\n,]+/).filter(chunk => chunk.trim());
-        chunks.forEach(chunk => {
-            const item = document.createElement('div');
-            item.style.cssText = commonStyles.contentItem;
-            item.textContent = chunk.trim();
-            
-            const copyIndicator = document.createElement('span');
-            copyIndicator.style.cssText = commonStyles.copyIndicator;
-            copyIndicator.textContent = 'Copied!';
-            item.appendChild(copyIndicator);
+    // If we have extracted info, show it first
+    if (extractedInfo) {
+        const extractedSection = document.createElement('div');
+        extractedSection.style.marginBottom = '16px';
+        
+        // Show unmapped data first
+        if (extractedInfo.unmappedData && typeof extractedInfo.unmappedData === 'object') {
+            const unmappedTitle = document.createElement('div');
+            unmappedTitle.textContent = 'Additional Information';
+            unmappedTitle.style.fontWeight = 'bold';
+            unmappedTitle.style.marginBottom = '8px';
+            extractedSection.appendChild(unmappedTitle);
 
-            item.onclick = async () => {
-                try {
-                    await navigator.clipboard.writeText(chunk.trim());
-                    copyIndicator.style.opacity = '1';
-                    setTimeout(() => {
-                        copyIndicator.style.opacity = '0';
-                    }, 1000);
-                } catch (error) {
-                    console.error('Failed to copy:', error);
+            // Log the unmapped data object
+            debugLog('Rendering unmapped data:', extractedInfo.unmappedData);
+
+            // Iterate through unmapped data
+            for (const [key, value] of Object.entries(extractedInfo.unmappedData)) {
+                if (!value) continue; // Skip empty values
+
+                const item = document.createElement('div');
+                item.style.cssText = commonStyles.contentItem;
+                
+                const valueText = document.createElement('div');
+                valueText.style.display = 'flex';
+                valueText.style.justifyContent = 'space-between';
+                valueText.style.alignItems = 'center';
+                
+                const fieldLabel = document.createElement('span');
+                fieldLabel.style.color = '#666';
+                fieldLabel.textContent = `${key}:`;
+                
+                const fieldValue = document.createElement('span');
+                fieldValue.style.marginLeft = '8px';
+                fieldValue.style.wordBreak = 'break-all';
+                fieldValue.textContent = typeof value === 'object' ? JSON.stringify(value) : value;
+                
+                valueText.appendChild(fieldLabel);
+                valueText.appendChild(fieldValue);
+                item.appendChild(valueText);
+                
+                const copyIndicator = document.createElement('span');
+                copyIndicator.style.cssText = commonStyles.copyIndicator;
+                copyIndicator.textContent = 'Copied!';
+                item.appendChild(copyIndicator);
+
+                item.onclick = async () => {
+                    try {
+                        const textToCopy = typeof value === 'object' ? JSON.stringify(value) : value;
+                        await navigator.clipboard.writeText(textToCopy);
+                        copyIndicator.style.opacity = '1';
+                        setTimeout(() => {
+                            copyIndicator.style.opacity = '0';
+                        }, 1000);
+                    } catch (error) {
+                        console.error('Failed to copy:', error);
+                    }
+                };
+                
+                item.onmouseover = () => {
+                    item.style.backgroundColor = '#eee';
+                };
+                
+                item.onmouseout = () => {
+                    item.style.backgroundColor = '#f5f5f5';
+                };
+
+                extractedSection.appendChild(item);
+            }
+        }
+
+        // Show mapped fields that have values
+        if (extractedInfo.mappings && typeof extractedInfo.mappings === 'object') {
+            const mappingsObj = extractedInfo.mappings.mappings || extractedInfo.mappings;
+            const nonEmptyMappings = Object.entries(mappingsObj).filter(([_, value]) => value);
+
+            if (nonEmptyMappings.length > 0) {
+                const mappedTitle = document.createElement('div');
+                mappedTitle.textContent = 'Mapped Fields';
+                mappedTitle.style.fontWeight = 'bold';
+                mappedTitle.style.marginTop = '16px';
+                mappedTitle.style.marginBottom = '8px';
+                extractedSection.appendChild(mappedTitle);
+
+                // Iterate through non-empty mappings
+                for (const [fieldId, value] of nonEmptyMappings) {
+                    const item = document.createElement('div');
+                    item.style.cssText = commonStyles.contentItem;
+                    
+                    const valueText = document.createElement('div');
+                    valueText.style.display = 'flex';
+                    valueText.style.justifyContent = 'space-between';
+                    valueText.style.alignItems = 'center';
+                    
+                    const fieldLabel = document.createElement('span');
+                    fieldLabel.style.color = '#666';
+                    fieldLabel.textContent = `${fieldId}:`;
+                    
+                    const fieldValue = document.createElement('span');
+                    fieldValue.style.marginLeft = '8px';
+                    fieldValue.style.wordBreak = 'break-all';
+                    fieldValue.textContent = typeof value === 'object' ? JSON.stringify(value) : value;
+                    
+                    valueText.appendChild(fieldLabel);
+                    valueText.appendChild(fieldValue);
+                    item.appendChild(valueText);
+                    
+                    const copyIndicator = document.createElement('span');
+                    copyIndicator.style.cssText = commonStyles.copyIndicator;
+                    copyIndicator.textContent = 'Copied!';
+                    item.appendChild(copyIndicator);
+
+                    item.onclick = async () => {
+                        try {
+                            const textToCopy = typeof value === 'object' ? JSON.stringify(value) : value;
+                            await navigator.clipboard.writeText(textToCopy);
+                            copyIndicator.style.opacity = '1';
+                            setTimeout(() => {
+                                copyIndicator.style.opacity = '0';
+                            }, 1000);
+                        } catch (error) {
+                            console.error('Failed to copy:', error);
+                        }
+                    };
+                    
+                    item.onmouseover = () => {
+                        item.style.backgroundColor = '#eee';
+                    };
+                    
+                    item.onmouseout = () => {
+                        item.style.backgroundColor = '#f5f5f5';
+                    };
+
+                    extractedSection.appendChild(item);
                 }
-            };
-            
-            item.onmouseover = () => {
-                item.style.backgroundColor = '#eee';
-            };
-            
-            item.onmouseout = () => {
-                item.style.backgroundColor = '#f5f5f5';
-            };
+            }
+        }
 
-            content.appendChild(item);
-        });
+        content.appendChild(extractedSection);
     }
 
-    // Add image preview if available
-    if (imageBase64) {
-        const imageContainer = document.createElement('div');
-        imageContainer.style.cssText = commonStyles.contentItem;
-        
-        const img = document.createElement('img');
-        img.src = `data:image/png;base64,${imageBase64}`;
-        img.style.maxWidth = '100%';
-        img.style.borderRadius = '4px';
-        
-        imageContainer.appendChild(img);
-        content.appendChild(imageContainer);
+    // Add original content section
+    if (clipboardText || imageBase64) {
+        const originalTitle = document.createElement('div');
+        originalTitle.textContent = 'Original Content';
+        originalTitle.style.fontWeight = 'bold';
+        originalTitle.style.marginBottom = '8px';
+        content.appendChild(originalTitle);
+
+        // Add text content if available
+        if (clipboardText) {
+            const chunks = clipboardText.split(/[\n,]+/).filter(chunk => chunk.trim());
+            chunks.forEach(chunk => {
+                const item = document.createElement('div');
+                item.style.cssText = commonStyles.contentItem;
+                item.textContent = chunk.trim();
+                
+                const copyIndicator = document.createElement('span');
+                copyIndicator.style.cssText = commonStyles.copyIndicator;
+                copyIndicator.textContent = 'Copied!';
+                item.appendChild(copyIndicator);
+
+                item.onclick = async () => {
+                    try {
+                        await navigator.clipboard.writeText(chunk.trim());
+                        copyIndicator.style.opacity = '1';
+                        setTimeout(() => {
+                            copyIndicator.style.opacity = '0';
+                        }, 1000);
+                    } catch (error) {
+                        console.error('Failed to copy:', error);
+                    }
+                };
+                
+                item.onmouseover = () => {
+                    item.style.backgroundColor = '#eee';
+                };
+                
+                item.onmouseout = () => {
+                    item.style.backgroundColor = '#f5f5f5';
+                };
+
+                content.appendChild(item);
+            });
+        }
+
+        // Add image preview if available
+        if (imageBase64) {
+            const imageContainer = document.createElement('div');
+            imageContainer.style.cssText = commonStyles.contentItem;
+            
+            const img = document.createElement('img');
+            img.src = `data:image/png;base64,${imageBase64}`;
+            img.style.maxWidth = '100%';
+            img.style.borderRadius = '4px';
+            
+            imageContainer.appendChild(img);
+            content.appendChild(imageContainer);
+        }
     }
 
     container.appendChild(content);
     document.body.appendChild(container);
+    
+    // Store reference to current window
+    currentFloatingWindow = container;
 
     // Make the window draggable
     let isDragging = false;
@@ -451,7 +611,14 @@ function createFloatingClipboardWindow(clipboardText, imageBase64) {
         document.removeEventListener('mouseup', dragEnd);
     }
 
-    return container;
+    // Update the return value to include a reference to the window
+    return {
+        element: container,
+        remove: () => {
+            container.remove();
+            currentFloatingWindow = null;
+        }
+    };
 }
 
 // Update the handlePaste function
@@ -604,14 +771,19 @@ async function handlePaste(e) {
             
             // Send message to background script
             stepTracker.updateStep('Processing with AI...');
-            const response = await new Promise((resolve) => {
+            const response = await new Promise((resolve, reject) => {
                 chrome.runtime.sendMessage({
                     action: 'intelligentPaste',
                     clipboardText,
                     imageBase64,
-                    formFields,
-                    pageHtml
-                }, resolve);
+                    formFields
+                }, (result) => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve(result);
+                    }
+                });
             });
 
             // Stop progress animation
@@ -622,39 +794,30 @@ async function handlePaste(e) {
                 stepTracker.updateStep('Filling form fields...');
                 fillFormFields(response.mappings);
                 stepTracker.updateProgress(100);
+                stepTracker.updateStep('Complete!');
                 
-                // Format cost information
-                let costMessage = '';
-                if (response.cost) {
-                    const totalCost = response.cost.total.toFixed(4);
-                    const tokenCount = response.cost.inputTokens + response.cost.outputTokens;
-                    costMessage = `\n\nCost: $${totalCost} (${tokenCount} tokens`;
-                    if (response.cost.imageCount > 0) {
-                        costMessage += `, ${response.cost.imageCount} images`;
-                    }
-                    costMessage += ')';
-                }
-                
-                stepTracker.updateStep(`Complete!${costMessage}`);
+                // Create new floating window with results
+                const extractedWindow = createFloatingClipboardWindow(clipboardText, imageBase64, {
+                    mappings: response.mappings,
+                    unmappedData: response.unmappedData,
+                    cost: response.cost
+                });
+
+                // Remove the progress tracker
                 setTimeout(() => {
                     stepTracker.remove();
-                    showNotification(`Form filled successfully!${costMessage}`, 'success');
+                    showNotification('Form filled successfully!', 'success');
                 }, 1000);
             } else {
-                stepTracker.updateStep('Failed to process');
-                setTimeout(() => {
-                    stepTracker.remove();
-                    showNotification('Failed to process paste', 'error');
-                }, 1000);
+                throw new Error('No mappings received from AI');
             }
         } catch (error) {
-            clearInterval(progressInterval);
-            debugLog('Error in paste handler:', error);
+            debugLog('Error processing paste:', error);
             if (stepTracker) {
                 stepTracker.updateStep('Error occurred');
                 setTimeout(() => stepTracker.remove(), 1000);
             }
-            showNotification('Extension error. Please refresh the page.', 'error');
+            showNotification('Failed to process paste: ' + error.message, 'error');
         } finally {
             isProcessingPaste = false;
         }
@@ -930,91 +1093,63 @@ function fillFormFields(mappings) {
     Object.entries(actualMappings).forEach(([fieldId, value]) => {
         debugLog(`Trying to fill field "${fieldId}" with value:`, value);
         
-        // Special handling for phone fields
-        if (fieldId === 'phone') {
-            // Try selectors in order of specificity
-            const phoneInput = 
-                document.querySelector('input[name="phone"]') ||  // First try exact name match
-                document.querySelector('input[type="tel"]') ||    // Then try tel type
-                document.querySelector('.vti__input') ||         // Then try specific classes
-                document.querySelector('[aria-label*="phone" i]'); // Finally try aria labels
+        // Try to find the field using multiple selectors
+        const element = 
+            document.getElementById(fieldId) || 
+            document.getElementsByName(fieldId)[0] ||
+            document.querySelector(`[data-field="${fieldId}"]`) ||
+            document.querySelector(`[data-test-id="${fieldId}"]`) ||
+            document.querySelector(`input[name="${fieldId}"]`) ||
+            document.querySelector(`[data-name="${fieldId}"]`) ||
+            document.querySelector(`[aria-label="${fieldId}"]`);
 
-            if (phoneInput) {
-                debugLog(`Found phone input:`, {
-                    tagName: phoneInput.tagName,
-                    type: phoneInput.type,
-                    class: phoneInput.className,
-                    currentValue: phoneInput.value,
-                    path: getElementPath(phoneInput)  // Log the DOM path to help debug
-                });
+        if (element) {
+            debugLog(`Found element for "${fieldId}":`, {
+                tagName: element.tagName,
+                type: element.type,
+                currentValue: element.value
+            });
 
-                // Clean the phone number
+            // Special handling for phone fields
+            if (fieldId === 'phone' || element.type === 'tel') {
                 const cleanPhone = value.replace(/[^0-9+]/g, '');
-                
-                // Set the value
-                phoneInput.value = cleanPhone;
-                
-                // Trigger events in the correct order
-                phoneInput.dispatchEvent(new Event('focus', { bubbles: true }));
-                phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
-                phoneInput.dispatchEvent(new Event('change', { bubbles: true }));
-                phoneInput.dispatchEvent(new Event('blur', { bubbles: true }));
-
-                highlightField(phoneInput);
-                filledFields.push(phoneInput);
-                
-                debugLog(`Successfully filled phone field with value:`, cleanPhone);
+                element.value = cleanPhone;
             } else {
-                debugLog('Could not find phone input field. Available inputs:', 
-                    Array.from(document.querySelectorAll('input')).map(input => ({
-                        tagName: input.tagName,
-                        type: input.type,
-                        name: input.name,
-                        class: input.className,
-                        path: getElementPath(input)
-                    }))
-                );
-            }
-        } else {
-            // Regular field handling
-            const element = 
-                document.getElementById(fieldId) || 
-                document.getElementsByName(fieldId)[0] ||
-                document.querySelector(`[data-field="${fieldId}"]`) ||
-                document.querySelector(`[data-test-id="${fieldId}"]`) ||
-                document.querySelector(`input[name="${fieldId}"]`) ||
-                document.querySelector(`[data-name="${fieldId}"]`) ||
-                document.querySelector(`[aria-label="${fieldId}"]`);
-
-            if (element) {
-                debugLog(`Found element for "${fieldId}":`, {
-                    tagName: element.tagName,
-                    type: element.type,
-                    currentValue: element.value
-                });
-
                 element.value = value;
-                element.dispatchEvent(new Event('change', { bubbles: true }));
-                element.dispatchEvent(new Event('input', { bubbles: true }));
-                highlightField(element);
-                filledFields.push(element);
-                
-                debugLog(`Successfully filled "${fieldId}" with value:`, value);
-            } else {
-                debugLog(`Could not find element for "${fieldId}". Trying alternative selectors...`);
-                // Log all potential matching elements for debugging
-                const allInputs = document.querySelectorAll('input, select, textarea');
-                Array.from(allInputs).forEach(input => {
-                    debugLog('Available field:', {
-                        id: input.id,
-                        name: input.name,
-                        'data-field': input.getAttribute('data-field'),
-                        'aria-label': input.getAttribute('aria-label'),
-                        type: input.type,
-                        class: input.className
-                    });
-                });
             }
+
+            // Trigger all relevant events
+            ['focus', 'input', 'change', 'blur'].forEach(eventType => {
+                element.dispatchEvent(new Event(eventType, { bubbles: true }));
+            });
+
+            // Highlight the field and its label
+            highlightField(element);
+            
+            // Also highlight any associated labels
+            const labels = [
+                ...Array.from(document.querySelectorAll(`label[for="${element.id}"]`)),
+                element.closest('label'),
+                element.parentElement?.querySelector('label')
+            ].filter(Boolean);
+
+            labels.forEach(label => {
+                label.style.cssText += commonStyles.filledLabel;
+                filledFields.push(label);
+            });
+
+            filledFields.push(element);
+            debugLog(`Successfully filled "${fieldId}" with value:`, value);
+        } else {
+            debugLog(`Could not find element for "${fieldId}". Available fields:`, 
+                Array.from(document.querySelectorAll('input, select, textarea')).map(input => ({
+                    id: input.id,
+                    name: input.name,
+                    type: input.type,
+                    'data-field': input.getAttribute('data-field'),
+                    'aria-label': input.getAttribute('aria-label')
+                }))
+            );
         }
     });
 
@@ -1023,7 +1158,11 @@ function fillFormFields(mappings) {
     // Remove highlights after 3 seconds
     setTimeout(() => {
         filledFields.forEach(element => {
-            removeHighlight(element);
+            if (element.tagName === 'LABEL') {
+                element.style.cssText = element.dataset.originalStyle || '';
+            } else {
+                removeHighlight(element);
+            }
         });
     }, 3000);
 }
