@@ -474,13 +474,27 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                     try {
                         const textToCopy = typeof value === 'object' ? JSON.stringify(value) : value;
                         
-                        // Get the currently focused element
-                        const activeElement = document.activeElement;
-                        const isFormField = activeElement && 
-                            (activeElement.tagName === 'INPUT' || 
-                             activeElement.tagName === 'TEXTAREA' || 
-                             activeElement.tagName === 'SELECT' ||
-                             activeElement.isContentEditable);
+                        // Use the last focused element instead of active element
+                        const formElement = lastFocusedElement;
+                        debugLog('Last focused element:', {
+                            tagName: formElement?.tagName,
+                            type: formElement?.type,
+                            id: formElement?.id,
+                            className: formElement?.className,
+                            isContentEditable: formElement?.isContentEditable,
+                            role: formElement?.getAttribute('role'),
+                            contenteditable: formElement?.getAttribute('contenteditable')
+                        });
+
+                        const isFormField = formElement && (
+                            formElement.tagName === 'INPUT' ||
+                            formElement.tagName === 'TEXTAREA' ||
+                            formElement.tagName === 'SELECT' ||
+                            formElement.isContentEditable ||
+                            formElement.getAttribute('role') === 'textbox' ||
+                            formElement.getAttribute('contenteditable') === 'true' ||
+                            formElement.matches('input, textarea, select, [contenteditable="true"], [role="textbox"]')
+                        );
 
                         // Copy to clipboard
                         await navigator.clipboard.writeText(textToCopy);
@@ -492,32 +506,41 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                             copyIndicator.style.opacity = '0';
                         }, 1000);
 
-                        // If a form field is focused, insert the value
-                        if (isFormField) {
-                            if (activeElement.tagName === 'SELECT') {
+                        // If a form field was last focused, insert the value
+                        if (isFormField && formElement) {
+                            debugLog('Inserting into form field:', {
+                                tagName: formElement.tagName,
+                                type: formElement.type,
+                                value: textToCopy
+                            });
+
+                            if (formElement.tagName === 'SELECT') {
                                 // For select elements, try to find matching option
-                                const options = Array.from(activeElement.options);
+                                const options = Array.from(formElement.options);
                                 const matchingOption = options.find(opt => 
                                     opt.text.toLowerCase().includes(textToCopy.toLowerCase()) ||
                                     opt.value.toLowerCase().includes(textToCopy.toLowerCase())
                                 );
                                 if (matchingOption) {
-                                    activeElement.value = matchingOption.value;
+                                    formElement.value = matchingOption.value;
                                 }
+                            } else if (formElement.isContentEditable || formElement.getAttribute('contenteditable') === 'true') {
+                                // For contenteditable elements
+                                formElement.textContent = textToCopy;
                             } else {
                                 // For other input types
-                                activeElement.value = textToCopy;
+                                formElement.value = textToCopy;
                             }
 
                             // Trigger change event
-                            activeElement.dispatchEvent(new Event('input', { bubbles: true }));
-                            activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+                            formElement.dispatchEvent(new Event('input', { bubbles: true }));
+                            formElement.dispatchEvent(new Event('change', { bubbles: true }));
                             
                             // Add visual feedback
-                            const originalBackground = activeElement.style.backgroundColor;
-                            activeElement.style.backgroundColor = '#e3f2fd';
+                            const originalBackground = formElement.style.backgroundColor;
+                            formElement.style.backgroundColor = '#e3f2fd';
                             setTimeout(() => {
-                                activeElement.style.backgroundColor = originalBackground;
+                                formElement.style.backgroundColor = originalBackground;
                             }, 500);
                         }
                     } catch (error) {
@@ -582,13 +605,27 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                         try {
                             const textToCopy = typeof value === 'object' ? JSON.stringify(value) : value;
                             
-                            // Get the currently focused element
-                            const activeElement = document.activeElement;
-                            const isFormField = activeElement && 
-                                (activeElement.tagName === 'INPUT' || 
-                                 activeElement.tagName === 'TEXTAREA' || 
-                                 activeElement.tagName === 'SELECT' ||
-                                 activeElement.isContentEditable);
+                            // Use the last focused element instead of active element
+                            const formElement = lastFocusedElement;
+                            debugLog('Last focused element:', {
+                                tagName: formElement?.tagName,
+                                type: formElement?.type,
+                                id: formElement?.id,
+                                className: formElement?.className,
+                                isContentEditable: formElement?.isContentEditable,
+                                role: formElement?.getAttribute('role'),
+                                contenteditable: formElement?.getAttribute('contenteditable')
+                            });
+
+                            const isFormField = formElement && (
+                                formElement.tagName === 'INPUT' ||
+                                formElement.tagName === 'TEXTAREA' ||
+                                formElement.tagName === 'SELECT' ||
+                                formElement.isContentEditable ||
+                                formElement.getAttribute('role') === 'textbox' ||
+                                formElement.getAttribute('contenteditable') === 'true' ||
+                                formElement.matches('input, textarea, select, [contenteditable="true"], [role="textbox"]')
+                            );
 
                             // Copy to clipboard
                             await navigator.clipboard.writeText(textToCopy);
@@ -600,32 +637,41 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                                 copyIndicator.style.opacity = '0';
                             }, 1000);
 
-                            // If a form field is focused, insert the value
-                            if (isFormField) {
-                                if (activeElement.tagName === 'SELECT') {
+                            // If a form field was last focused, insert the value
+                            if (isFormField && formElement) {
+                                debugLog('Inserting into form field:', {
+                                    tagName: formElement.tagName,
+                                    type: formElement.type,
+                                    value: textToCopy
+                                });
+
+                                if (formElement.tagName === 'SELECT') {
                                     // For select elements, try to find matching option
-                                    const options = Array.from(activeElement.options);
+                                    const options = Array.from(formElement.options);
                                     const matchingOption = options.find(opt => 
                                         opt.text.toLowerCase().includes(textToCopy.toLowerCase()) ||
                                         opt.value.toLowerCase().includes(textToCopy.toLowerCase())
                                     );
                                     if (matchingOption) {
-                                        activeElement.value = matchingOption.value;
+                                        formElement.value = matchingOption.value;
                                     }
+                                } else if (formElement.isContentEditable || formElement.getAttribute('contenteditable') === 'true') {
+                                    // For contenteditable elements
+                                    formElement.textContent = textToCopy;
                                 } else {
                                     // For other input types
-                                    activeElement.value = textToCopy;
+                                    formElement.value = textToCopy;
                                 }
 
                                 // Trigger change event
-                                activeElement.dispatchEvent(new Event('input', { bubbles: true }));
-                                activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+                                formElement.dispatchEvent(new Event('input', { bubbles: true }));
+                                formElement.dispatchEvent(new Event('change', { bubbles: true }));
                                 
                                 // Add visual feedback
-                                const originalBackground = activeElement.style.backgroundColor;
-                                activeElement.style.backgroundColor = '#e3f2fd';
+                                const originalBackground = formElement.style.backgroundColor;
+                                formElement.style.backgroundColor = '#e3f2fd';
                                 setTimeout(() => {
-                                    activeElement.style.backgroundColor = originalBackground;
+                                    formElement.style.backgroundColor = originalBackground;
                                 }, 500);
                             }
                         } catch (error) {
@@ -1471,4 +1517,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 showNotification('Failed to read clipboard content', 'error');
             });
     }
+}); 
+
+// Add at the top of the file
+let lastFocusedElement = null;
+
+// Add event listeners for focus tracking
+document.addEventListener('focusin', (e) => {
+    lastFocusedElement = e.target;
+    debugLog('Element focused:', {
+        tagName: e.target.tagName,
+        type: e.target.type,
+        id: e.target.id,
+        className: e.target.className
+    });
 }); 
