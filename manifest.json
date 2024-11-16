@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Intelligent Paste",
+  "version": "1.0",
+  "description": "Intelligently maps clipboard content to form fields using AI",
+  "permissions": [
+    "activeTab",
+    "clipboardRead",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "run_at": "document_start",
+    "all_frames": true
+  }],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "devtools_page": "devtools.html"
+} 
