@@ -54,6 +54,23 @@ chrome.storage.sync.get(['openaiApiKey'], (result) => {
     OPENAI_API_KEY = result.openaiApiKey;
 });
 
+// Add at the top of background.js, right after the variable declarations
+chrome.commands.onCommand.addListener(async (command) => {
+    debugLog('Command received:', command);
+    if (command === "run-intelligent-paste") {
+        // Get the active tab
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab) {
+            debugLog('Sending command to tab:', tab.id);
+            chrome.tabs.sendMessage(tab.id, {
+                action: "run-intelligent-paste"
+            }).catch(error => {
+                debugLog('Error sending command to tab:', error);
+            });
+        }
+    }
+});
+
 async function handleIntelligentPaste(clipboardText, formFields, imageBase64 = null) {
     const startTime = Date.now();
     debugLog('=== Starting Intelligent Paste Request ===');

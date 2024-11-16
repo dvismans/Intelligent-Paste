@@ -1,7 +1,60 @@
 console.log('Content script loaded!');
 
-// Listen for paste events on the document
-document.addEventListener('paste', handlePaste, true);
+// Add both event listeners at the top of the file
+document.addEventListener('paste', handlePaste);
+document.addEventListener('keydown', (e) => {
+    // Check for Alt/Option + P
+    if (e.altKey && e.code === 'KeyP') {
+        e.preventDefault(); // Prevent any default behavior
+        debugLog('Intelligent paste shortcut detected (Alt/Option + P)');
+        
+        // Read from clipboard using Clipboard API
+        navigator.clipboard.read()
+            .then(async clipboardItems => {
+                let clipboardText = '';
+                let imageBase64 = null;
+
+                for (const item of clipboardItems) {
+                    // Handle text
+                    if (item.types.includes('text/plain')) {
+                        const blob = await item.getType('text/plain');
+                        clipboardText = await blob.text();
+                    }
+                    // Handle image
+                    if (item.types.some(type => type.startsWith('image/'))) {
+                        const imageType = item.types.find(type => type.startsWith('image/'));
+                        if (imageType) {
+                            const blob = await item.getType(imageType);
+                            imageBase64 = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onload = () => resolve(reader.result.split(',')[1]);
+                                reader.readAsDataURL(blob);
+                            });
+                        }
+                    }
+                }
+
+                // Create a synthetic paste event
+                const syntheticEvent = {
+                    preventDefault: () => {},
+                    clipboardData: {
+                        getData: (type) => type === 'text/plain' ? clipboardText : '',
+                        items: clipboardItems
+                    }
+                };
+
+                // Handle the paste with our existing function
+                handlePaste(syntheticEvent);
+            })
+            .catch(error => {
+                debugLog('Error reading clipboard:', error);
+                showNotification('Failed to read clipboard content', 'error');
+            });
+    }
+});
+
+// Remove the old paste event listener
+// document.addEventListener('paste', handlePaste, true);
 
 // Add this new function to test clipboard access
 async function testClipboardAccess(e) {
@@ -1225,4 +1278,103 @@ function findLabelForElement(element) {
     }
 
     return null;
-} 
+}
+
+// Update the keyboard shortcut handling
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'intelligent-paste') {
+        // Read from clipboard using Clipboard API
+        navigator.clipboard.read()
+            .then(async clipboardItems => {
+                let clipboardText = '';
+                let imageBase64 = null;
+
+                for (const item of clipboardItems) {
+                    // Handle text
+                    if (item.types.includes('text/plain')) {
+                        const blob = await item.getType('text/plain');
+                        clipboardText = await blob.text();
+                    }
+                    // Handle image
+                    if (item.types.some(type => type.startsWith('image/'))) {
+                        const imageType = item.types.find(type => type.startsWith('image/'));
+                        if (imageType) {
+                            const blob = await item.getType(imageType);
+                            imageBase64 = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onload = () => resolve(reader.result.split(',')[1]);
+                                reader.readAsDataURL(blob);
+                            });
+                        }
+                    }
+                }
+
+                // Create a synthetic paste event
+                const syntheticEvent = {
+                    preventDefault: () => {},
+                    clipboardData: {
+                        getData: (type) => type === 'text/plain' ? clipboardText : '',
+                        items: clipboardItems
+                    }
+                };
+
+                // Handle the paste with our existing function
+                handlePaste(syntheticEvent);
+            })
+            .catch(error => {
+                debugLog('Error reading clipboard:', error);
+                showNotification('Failed to read clipboard content', 'error');
+            });
+    }
+}); 
+
+// Update the message listener in content.js
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'run-intelligent-paste') {
+        // Create a synthetic paste event
+        const syntheticEvent = {
+            preventDefault: () => {},
+            clipboardData: null  // We'll get this from the clipboard API
+        };
+
+        // Read from clipboard using Clipboard API
+        navigator.clipboard.read()
+            .then(async clipboardItems => {
+                let clipboardText = '';
+                let imageBase64 = null;
+
+                for (const item of clipboardItems) {
+                    // Handle text
+                    if (item.types.includes('text/plain')) {
+                        const blob = await item.getType('text/plain');
+                        clipboardText = await blob.text();
+                    }
+                    // Handle image
+                    if (item.types.some(type => type.startsWith('image/'))) {
+                        const imageType = item.types.find(type => type.startsWith('image/'));
+                        if (imageType) {
+                            const blob = await item.getType(imageType);
+                            imageBase64 = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onload = () => resolve(reader.result.split(',')[1]);
+                                reader.readAsDataURL(blob);
+                            });
+                        }
+                    }
+                }
+
+                // Update the synthetic event with clipboard data
+                syntheticEvent.clipboardData = {
+                    getData: (type) => type === 'text/plain' ? clipboardText : '',
+                    items: clipboardItems
+                };
+
+                // Handle the paste with our existing function
+                handlePaste(syntheticEvent);
+            })
+            .catch(error => {
+                debugLog('Error reading clipboard:', error);
+                showNotification('Failed to read clipboard content', 'error');
+            });
+    }
+}); 
