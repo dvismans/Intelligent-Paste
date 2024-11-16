@@ -39,16 +39,21 @@ async function testClipboardAccess(e) {
     }
 }
 
-// Add debug logging function that communicates with background script
+// Update the debug logging function
 function debugLog(message, data = null) {
     const logMessage = data ? `${message} ${JSON.stringify(data)}` : message;
     console.log(logMessage);
     
-    // Send to background script for DevTools panel
-    chrome.runtime.sendMessage({
-        action: 'debugLog',
-        message: logMessage
-    }).catch(() => {}); // Ignore errors if background script is not ready
+    // Only try to send to background if chrome.runtime is available
+    if (chrome?.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({
+            action: 'debugLog',
+            message: logMessage
+        }).catch(() => {
+            // Ignore errors if background script is not ready or disconnected
+            console.log('Failed to send log to background script');
+        });
+    }
 }
 
 // Add this at the top of the file
@@ -123,6 +128,103 @@ const commonStyles = {
     filledLabel: `
         color: #2196F3 !important;
         font-weight: bold !important;
+    `,
+    clipboardPreview: `
+        margin-top: 8px;
+        padding: 8px;
+        background: #f5f5f5;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 12px;
+        max-height: 100px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+    `,
+    clipboardImage: `
+        max-width: 100%;
+        max-height: 100px;
+        margin-top: 8px;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+    `,
+    successIcon: `
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        margin-right: 8px;
+        vertical-align: middle;
+        background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%234CAF50"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>');
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: contain;
+    `,
+    errorIcon: `
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        margin-right: 8px;
+        vertical-align: middle;
+        background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23f44336"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>');
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: contain;
+    `,
+    floatingWindow: `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        width: 300px;
+        max-height: 400px;
+        overflow-y: auto;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+        font-family: Arial, sans-serif;
+    `,
+    floatingHeader: `
+        padding: 12px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    `,
+    closeButton: `
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px;
+        color: #666;
+        font-size: 18px;
+    `,
+    contentSection: `
+        padding: 12px;
+    `,
+    contentItem: `
+        margin-bottom: 8px;
+        padding: 8px;
+        background: #f5f5f5;
+        border: 1px solid #eee;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        font-size: 13px;
+        position: relative;
+    `,
+    copyIndicator: `
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        background: #4CAF50;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        opacity: 0;
+        transition: opacity 0.2s;
     `
 };
 
@@ -145,6 +247,9 @@ function createStepTracker() {
     const status = document.createElement('div');
     status.style.cssText = commonStyles.message;
 
+    const clipboardPreview = document.createElement('div');
+    clipboardPreview.style.display = 'none';
+
     const progressContainer = document.createElement('div');
     progressContainer.style.cssText = commonStyles.progressContainer + 'display: none;';
 
@@ -158,6 +263,7 @@ function createStepTracker() {
     progressContainer.appendChild(progressBar);
 
     content.appendChild(status);
+    content.appendChild(clipboardPreview);
     content.appendChild(progressContainer);
     
     tracker.appendChild(header);
@@ -175,6 +281,25 @@ function createStepTracker() {
         updateProgress: (percent) => {
             progress.style.width = `${percent}%`;
         },
+        showClipboardContent: (text, image) => {
+            clipboardPreview.style.display = 'block';
+            clipboardPreview.innerHTML = '';
+
+            if (text) {
+                const textPreview = document.createElement('div');
+                textPreview.style.cssText = commonStyles.clipboardPreview;
+                textPreview.textContent = text.length > 200 ? 
+                    text.substring(0, 200) + '...' : text;
+                clipboardPreview.appendChild(textPreview);
+            }
+
+            if (image) {
+                const img = document.createElement('img');
+                img.style.cssText = commonStyles.clipboardImage;
+                img.src = `data:image/png;base64,${image}`;
+                clipboardPreview.appendChild(img);
+            }
+        },
         remove: () => {
             tracker.remove();
             backdrop.remove();
@@ -182,7 +307,154 @@ function createStepTracker() {
     };
 }
 
-// Modify the handlePaste function to use the step tracker
+// Update the captureVisibleTab function
+async function captureVisibleTab() {
+    try {
+        debugLog('Requesting screenshot capture');
+        const response = await chrome.runtime.sendMessage({ 
+            action: 'captureVisibleTab' 
+        });
+        
+        if (response.error) {
+            debugLog('Screenshot capture failed:', response.error);
+            return null;
+        }
+        
+        if (!response.imageData) {
+            debugLog('No screenshot data received');
+            return null;
+        }
+        
+        debugLog('Screenshot captured successfully');
+        return response.imageData;
+    } catch (error) {
+        debugLog('Error capturing screenshot:', error);
+        return null;
+    }
+}
+
+// Add function to create floating window
+function createFloatingClipboardWindow(clipboardText, imageBase64) {
+    const container = document.createElement('div');
+    container.style.cssText = commonStyles.floatingWindow;
+
+    // Create header
+    const header = document.createElement('div');
+    header.style.cssText = commonStyles.floatingHeader;
+    
+    const title = document.createElement('div');
+    title.textContent = 'Clipboard Content';
+    title.style.fontWeight = 'bold';
+    
+    const closeButton = document.createElement('button');
+    closeButton.style.cssText = commonStyles.closeButton;
+    closeButton.innerHTML = '×';
+    closeButton.onclick = () => container.remove();
+    
+    header.appendChild(title);
+    header.appendChild(closeButton);
+    container.appendChild(header);
+
+    // Create content section
+    const content = document.createElement('div');
+    content.style.cssText = commonStyles.contentSection;
+
+    // Add text content if available
+    if (clipboardText) {
+        // Split text into logical chunks (e.g., by lines or other patterns)
+        const chunks = clipboardText.split(/[\n,]+/).filter(chunk => chunk.trim());
+        chunks.forEach(chunk => {
+            const item = document.createElement('div');
+            item.style.cssText = commonStyles.contentItem;
+            item.textContent = chunk.trim();
+            
+            const copyIndicator = document.createElement('span');
+            copyIndicator.style.cssText = commonStyles.copyIndicator;
+            copyIndicator.textContent = 'Copied!';
+            item.appendChild(copyIndicator);
+
+            item.onclick = async () => {
+                try {
+                    await navigator.clipboard.writeText(chunk.trim());
+                    copyIndicator.style.opacity = '1';
+                    setTimeout(() => {
+                        copyIndicator.style.opacity = '0';
+                    }, 1000);
+                } catch (error) {
+                    console.error('Failed to copy:', error);
+                }
+            };
+            
+            item.onmouseover = () => {
+                item.style.backgroundColor = '#eee';
+            };
+            
+            item.onmouseout = () => {
+                item.style.backgroundColor = '#f5f5f5';
+            };
+
+            content.appendChild(item);
+        });
+    }
+
+    // Add image preview if available
+    if (imageBase64) {
+        const imageContainer = document.createElement('div');
+        imageContainer.style.cssText = commonStyles.contentItem;
+        
+        const img = document.createElement('img');
+        img.src = `data:image/png;base64,${imageBase64}`;
+        img.style.maxWidth = '100%';
+        img.style.borderRadius = '4px';
+        
+        imageContainer.appendChild(img);
+        content.appendChild(imageContainer);
+    }
+
+    container.appendChild(content);
+    document.body.appendChild(container);
+
+    // Make the window draggable
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
+
+    header.style.cursor = 'move';
+    header.addEventListener('mousedown', dragStart);
+
+    function dragStart(e) {
+        initialX = e.clientX - container.offsetLeft;
+        initialY = e.clientY - container.offsetTop;
+        isDragging = true;
+
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('mouseup', dragEnd);
+    }
+
+    function drag(e) {
+        if (isDragging) {
+            e.preventDefault();
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+            container.style.left = `${currentX}px`;
+            container.style.top = `${currentY}px`;
+            container.style.bottom = 'auto';
+            container.style.right = 'auto';
+        }
+    }
+
+    function dragEnd() {
+        isDragging = false;
+        document.removeEventListener('mousemove', drag);
+        document.removeEventListener('mouseup', dragEnd);
+    }
+
+    return container;
+}
+
+// Update the handlePaste function
 async function handlePaste(e) {
     // Prevent recursive paste handling
     if (isProcessingPaste) {
@@ -190,85 +462,95 @@ async function handlePaste(e) {
         return;
     }
 
-    let stepTracker;
+    let stepTracker = null;
     try {
         debugLog('Paste event captured!');
         isProcessingPaste = true;
 
         // First check if intelligent paste is enabled
-        let result;
-        try {
-            result = await chrome.storage.sync.get(['intelligentPasteEnabled']);
-        } catch (error) {
-            debugLog('Storage access failed:', error);
-            isProcessingPaste = false;
-            return;
-        }
-        
+        const result = await chrome.storage.sync.get(['intelligentPasteEnabled']);
         if (result.intelligentPasteEnabled === false) {
             debugLog('Intelligent paste is disabled');
             isProcessingPaste = false;
             return;
         }
 
-        let clipboardText = '';
-        let imageBase64 = null;
-
-        // Create a temporary element to handle clipboard data
+        // Create temporary element for paste
         const tempElem = document.createElement('div');
         tempElem.contentEditable = true;
         tempElem.style.position = 'fixed';
         tempElem.style.left = '-9999px';
         document.body.appendChild(tempElem);
-        
-        try {
-            // Get text directly from clipboardData first
-            if (e.clipboardData) {
-                clipboardText = e.clipboardData.getData('text/plain');
-                debugLog('Got text directly from clipboardData:', clipboardText);
+        tempElem.focus();
 
-                // Check for images in clipboardData
+        // Get clipboard data
+        let clipboardText = '';
+        let imageBase64 = null;
+
+        try {
+            // Try to get text directly from clipboardData
+            if (e.clipboardData) {
+                debugLog('Checking clipboardData...');
+                debugLog('Available types:', Array.from(e.clipboardData.types || []));
+                
+                clipboardText = e.clipboardData.getData('text/plain');
+                debugLog('Got text from clipboardData:', clipboardText);
+
+                // Check for images
                 if (e.clipboardData.items) {
+                    debugLog('Checking clipboard items:', e.clipboardData.items.length);
                     for (const item of e.clipboardData.items) {
-                        if (item.type.startsWith('image/')) {
+                        debugLog('Processing item type:', item.type);
+                        if (item.type.indexOf('image') !== -1) {
+                            debugLog('Found image item');
                             const blob = item.getAsFile();
                             if (blob) {
+                                debugLog('Got image blob');
                                 imageBase64 = await new Promise((resolve, reject) => {
                                     const reader = new FileReader();
-                                    reader.onload = () => resolve(reader.result.split(',')[1]);
-                                    reader.onerror = reject;
+                                    reader.onload = () => {
+                                        debugLog('Successfully read image');
+                                        resolve(reader.result.split(',')[1]);
+                                    };
+                                    reader.onerror = (error) => {
+                                        debugLog('Error reading image:', error);
+                                        reject(error);
+                                    };
                                     reader.readAsDataURL(blob);
                                 });
-                                debugLog('Got image from clipboardData');
                             }
                         }
                     }
                 }
             }
 
-            // Only use the temp element if we haven't found content yet
+            // If no content found, try pasting into temp element
             if (!clipboardText && !imageBase64) {
-                tempElem.focus();
+                debugLog('No content found in clipboardData, trying paste into temp element');
                 document.execCommand('paste');
                 clipboardText = tempElem.innerText;
+                debugLog('Got text from temp element:', clipboardText);
                 
-                // Check for images in the pasted content
                 const images = tempElem.getElementsByTagName('img');
                 if (images.length > 0) {
+                    debugLog('Found images in temp element:', images.length);
                     const imgSrc = images[0].src;
                     if (imgSrc.startsWith('data:image')) {
                         imageBase64 = imgSrc.split(',')[1];
-                        debugLog('Got image from pasted content');
+                        debugLog('Got image from temp element');
                     }
                 }
             }
         } finally {
-            // Clean up
             tempElem.remove();
         }
 
-        debugLog('Final clipboard text:', clipboardText ? 'found' : 'not found');
-        debugLog('Final image data:', imageBase64 ? 'found' : 'not found');
+        debugLog('Final clipboard content:', {
+            hasText: !!clipboardText,
+            hasImage: !!imageBase64,
+            textLength: clipboardText?.length,
+            imageSize: imageBase64?.length
+        });
 
         if (!clipboardText && !imageBase64) {
             debugLog('No content found in clipboard data');
@@ -277,9 +559,6 @@ async function handlePaste(e) {
             return;
         }
 
-        // Prevent default paste
-        e.preventDefault();
-        
         // Show confirmation dialog
         if (!confirm('Would you like to use Intelligent Paste to automatically fill this form?')) {
             debugLog('User cancelled intelligent paste');
@@ -287,117 +566,306 @@ async function handlePaste(e) {
             return;
         }
 
-        stepTracker = createStepTracker();
-        
-        // Get all form fields from the page
-        const formFields = getAllFormFields();
-        
-        if (imageBase64) {
-            stepTracker.updateStep('Processing image...');
-            stepTracker.showProgress(true);
-            
-            // Simulate upload progress for the image
-            let progress = 0;
-            const uploadInterval = setInterval(() => {
-                progress += 5;
-                if (progress <= 95) {
-                    stepTracker.updateProgress(progress);
-                }
-            }, 100);
+        // Prevent default paste behavior after confirmation
+        e.preventDefault();
 
-            // Send message to background script
-            chrome.runtime.sendMessage({
-                action: 'intelligentPaste',
-                clipboardText,
-                imageBase64,
-                formFields
-            }, response => {
-                clearInterval(uploadInterval);
-                handleResponse(response, stepTracker);
-            });
-        } else {
-            // Text-only processing
-            stepTracker.updateStep('Processing text...');
-            stepTracker.showProgress(false);
+        // Create floating window with clipboard content
+        const floatingWindow = createFloatingClipboardWindow(clipboardText, imageBase64);
+
+        // Create step tracker and show progress
+        stepTracker = createStepTracker();
+        stepTracker.showProgress(true);
+        let progress = 0;
+
+        // Start progress animation
+        const progressInterval = setInterval(() => {
+            progress += 2;
+            if (progress <= 90) {
+                stepTracker.updateProgress(progress);
+            }
+        }, 100);
+
+        try {
+            // Get all form elements from the page
+            const formFields = getAllFormFields();
+            debugLog('Form fields captured:', formFields);
+            
+            if (formFields.length === 0) {
+                clearInterval(progressInterval);
+                debugLog('No form fields found');
+                showNotification('No form fields found on page', 'error');
+                stepTracker.remove();
+                isProcessingPaste = false;
+                return;
+            }
+
+            // Get page HTML
+            const pageHtml = document.documentElement.outerHTML;
             
             // Send message to background script
-            chrome.runtime.sendMessage({
-                action: 'intelligentPaste',
-                clipboardText,
-                formFields
-            }, response => {
-                handleResponse(response, stepTracker);
+            stepTracker.updateStep('Processing with AI...');
+            const response = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({
+                    action: 'intelligentPaste',
+                    clipboardText,
+                    imageBase64,
+                    formFields,
+                    pageHtml
+                }, resolve);
             });
+
+            // Stop progress animation
+            clearInterval(progressInterval);
+            
+            if (response?.mappings) {
+                stepTracker.updateProgress(95);
+                stepTracker.updateStep('Filling form fields...');
+                fillFormFields(response.mappings);
+                stepTracker.updateProgress(100);
+                
+                // Format cost information
+                let costMessage = '';
+                if (response.cost) {
+                    const totalCost = response.cost.total.toFixed(4);
+                    const tokenCount = response.cost.inputTokens + response.cost.outputTokens;
+                    costMessage = `\n\nCost: $${totalCost} (${tokenCount} tokens`;
+                    if (response.cost.imageCount > 0) {
+                        costMessage += `, ${response.cost.imageCount} images`;
+                    }
+                    costMessage += ')';
+                }
+                
+                stepTracker.updateStep(`Complete!${costMessage}`);
+                setTimeout(() => {
+                    stepTracker.remove();
+                    showNotification(`Form filled successfully!${costMessage}`, 'success');
+                }, 1000);
+            } else {
+                stepTracker.updateStep('Failed to process');
+                setTimeout(() => {
+                    stepTracker.remove();
+                    showNotification('Failed to process paste', 'error');
+                }, 1000);
+            }
+        } catch (error) {
+            clearInterval(progressInterval);
+            debugLog('Error in paste handler:', error);
+            if (stepTracker) {
+                stepTracker.updateStep('Error occurred');
+                setTimeout(() => stepTracker.remove(), 1000);
+            }
+            showNotification('Extension error. Please refresh the page.', 'error');
+        } finally {
+            isProcessingPaste = false;
         }
     } catch (error) {
-        debugLog('Critical error in paste handler:', error);
+        debugLog('Critical error in paste handler:', error.message || error);
         if (stepTracker) {
             stepTracker.updateStep('Error occurred');
             setTimeout(() => stepTracker.remove(), 1000);
         }
         showNotification('Extension error. Please refresh the page.', 'error');
         isProcessingPaste = false;
-    }
-}
-
-// Add this helper function to handle responses
-function handleResponse(response, stepTracker) {
-    if (chrome.runtime.lastError) {
-        stepTracker.updateStep('Error occurred');
+        // Don't remove the floating window on error
+    } finally {
+        // Ensure flag is reset even if something unexpected happens
         setTimeout(() => {
-            stepTracker.remove();
-            showNotification('Extension error. Please refresh the page.', 'error');
-        }, 1000);
-        isProcessingPaste = false;
-        return;
+            isProcessingPaste = false;
+            debugLog('Paste processing flag reset');
+        }, 1500); // Give enough time for notifications to show
     }
-    
-    if (response?.error) {
-        stepTracker.updateStep('Error occurred');
-        setTimeout(() => {
-            stepTracker.remove();
-            showNotification(`Error: ${response.error}`, 'error');
-        }, 1000);
-        isProcessingPaste = false;
-        return;
-    }
-    
-    if (response?.mappings) {
-        stepTracker.updateStep('Filling form fields...');
-        fillFormFields(response.mappings);
-        stepTracker.updateStep('Complete!');
-        setTimeout(() => {
-            stepTracker.remove();
-            showNotification('Form filled successfully!', 'success');
-        }, 1000);
-    } else {
-        stepTracker.updateStep('Failed to process');
-        setTimeout(() => {
-            stepTracker.remove();
-            showNotification('Failed to process paste', 'error');
-        }, 1000);
-    }
-    isProcessingPaste = false;
 }
 
 function getAllFormFields() {
     const formFields = [];
-    const forms = document.getElementsByTagName('form');
+    debugLog('=== Form Fields Detection ===');
     
-    for (const form of forms) {
-        const inputs = form.querySelectorAll('input, textarea, select');
-        inputs.forEach(input => {
-            formFields.push({
-                id: input.id,
-                name: input.name,
-                type: input.type,
-                placeholder: input.placeholder,
-                label: findLabel(input)
+    // First try to find actual form elements
+    const forms = document.getElementsByTagName('form');
+    debugLog(`Found ${forms.length} form elements`);
+
+    if (forms.length > 0) {
+        // If we found forms, only look for fields inside them
+        for (const form of forms) {
+            debugLog('Processing form:', {
+                id: form.id,
+                class: form.className,
+                action: form.action
             });
-        });
+
+            const formInputs = form.querySelectorAll(
+                'input:not([type="hidden"]):not([type="submit"]):not([type="button"]), ' +
+                'textarea, ' +
+                'select'
+            );
+
+            debugLog(`Found ${formInputs.length} input fields in form`);
+            processInputs(formInputs, formFields);
+        }
+    } else {
+        // Only if no forms found, look for inputs anywhere in the document
+        debugLog('No form elements found, searching entire document');
+        
+        // Generic selectors for form fields
+        const selectors = [
+            'input:not([type="hidden"]):not([type="submit"]):not([type="button"])',
+            'textarea',
+            'select',
+            '[contenteditable="true"]',
+            '[role="textbox"]',
+            '[role="combobox"]',
+            '[role="spinbutton"]',
+            '[data-input]',
+            '[data-field]',
+            'input[type="number"]'
+        ];
+
+        debugLog('Searching with selectors:', selectors);
+        const allInputs = document.querySelectorAll(selectors.join(','));
+        debugLog(`Found ${allInputs.length} potential input fields in document`);
+        processInputs(allInputs, formFields);
     }
+
+    debugLog('Total fields detected:', formFields.length);
+    debugLog('Form fields collection:', formFields);
     
     return formFields;
+}
+
+function processInputs(inputs, formFields) {
+    debugLog('=== Processing Form Fields ===');
+    inputs.forEach(input => {
+        // Check if input is inside a form
+        const isInForm = input.closest('form') !== null;
+        
+        // Get all possible identifiers
+        const identifiers = {
+            id: input.id,
+            name: input.name,
+            'data-field': input.getAttribute('data-field'),
+            'data-input': input.getAttribute('data-input'),
+            'data-test-id': input.getAttribute('data-test-id'),
+            'aria-label': input.getAttribute('aria-label'),
+            role: input.getAttribute('role'),
+            class: input.className,
+            tagName: input.tagName.toLowerCase()
+        };
+
+        // If in a form, require at least an id or name
+        if (isInForm && !input.id && !input.name) {
+            debugLog('Skipping form field without id or name:', {
+                element: input.tagName,
+                type: input.type,
+                identifiers
+            });
+            return;
+        }
+
+        // Get all possible labels
+        const label = findLabel(input) || 
+                     input.getAttribute('aria-label') || 
+                     input.getAttribute('placeholder') ||
+                     input.getAttribute('title') ||
+                     input.getAttribute('data-label');
+
+        // Log detailed field information
+        debugLog('Found field:', {
+            element: input.tagName,
+            type: input.type || input.getAttribute('type') || 'text',
+            identifiers,
+            label,
+            value: input.value,
+            isVisible: isElementVisible(input),
+            path: getElementPath(input),
+            isInForm
+        });
+
+        const fieldInfo = {
+            id: identifiers.id || input.name, // Use name as fallback for id
+            name: input.name,
+            type: input.type || input.getAttribute('type') || 'text',
+            placeholder: input.placeholder,
+            label: label,
+            isInForm,
+            identifiers: Object.fromEntries(
+                Object.entries(identifiers).filter(([_, v]) => v)
+            )
+        };
+
+        formFields.push(fieldInfo);
+    });
+
+    debugLog('Processed form fields:', formFields);
+}
+
+// Helper function to check if element is visible
+function isElementVisible(element) {
+    const style = window.getComputedStyle(element);
+    return style.display !== 'none' && 
+           style.visibility !== 'hidden' && 
+           style.opacity !== '0';
+}
+
+// Helper function to get element's path
+function getElementPath(element) {
+    const path = [];
+    let currentNode = element;
+    
+    while (currentNode) {
+        let selector = currentNode.tagName.toLowerCase();
+        if (currentNode.id) {
+            selector += `#${currentNode.id}`;
+        } else if (currentNode.className) {
+            selector += `.${currentNode.className.split(' ').join('.')}`;
+        }
+        path.unshift(selector);
+        currentNode = currentNode.parentElement;
+    }
+    
+    return path.join(' > ');
+}
+
+// Enhanced label finding function
+function findLabel(input) {
+    // Try multiple methods to find a label
+    const methods = [
+        // Method 1: Standard label[for] attribute
+        () => input.id && document.querySelector(`label[for="${input.id}"]`)?.textContent,
+        
+        // Method 2: Wrapping label
+        () => input.closest('label')?.textContent,
+        
+        // Method 3: Preceding label or text
+        () => {
+            const previous = input.previousElementSibling;
+            if (previous?.tagName === 'LABEL' || previous?.classList.contains('label')) {
+                return previous.textContent;
+            }
+            return null;
+        },
+        
+        // Method 4: Nearby label in parent container
+        () => {
+            const container = input.closest('div,span,p');
+            return container?.querySelector('label,span.label')?.textContent;
+        },
+        
+        // Method 5: aria-labelledby
+        () => {
+            const labelledBy = input.getAttribute('aria-labelledby');
+            return labelledBy && document.getElementById(labelledBy)?.textContent;
+        }
+    ];
+
+    // Try each method until we find a label
+    for (const method of methods) {
+        const label = method();
+        if (label) {
+            return label.trim();
+        }
+    }
+
+    return '';
 }
 
 // Update showNotification function
@@ -416,12 +884,20 @@ function showNotification(message, type) {
     const content = document.createElement('div');
     content.style.cssText = commonStyles.content;
 
-    const messageDiv = document.createElement('div');
-    messageDiv.style.cssText = commonStyles.message;
-    messageDiv.textContent = message;
-    messageDiv.style.color = type === 'success' ? '#4CAF50' : '#f44336';
+    const messageContainer = document.createElement('div');
+    messageContainer.style.cssText = commonStyles.message + 'white-space: pre-wrap; display: flex; align-items: flex-start;';
 
-    content.appendChild(messageDiv);
+    // Add icon
+    const icon = document.createElement('span');
+    icon.style.cssText = type === 'success' ? commonStyles.successIcon : commonStyles.errorIcon;
+    messageContainer.appendChild(icon);
+
+    const messageText = document.createElement('span');
+    messageText.textContent = message;
+    messageText.style.color = type === 'success' ? '#333' : '#f44336'; // Normal color for success
+    messageContainer.appendChild(messageText);
+
+    content.appendChild(messageContainer);
     notification.appendChild(header);
     notification.appendChild(content);
     document.body.appendChild(notification);
@@ -438,69 +914,113 @@ function showNotification(message, type) {
         setTimeout(() => {
             notification.remove();
         }, 300);
-    }, 2000);
+    }, 3000);
 }
 
-// Helper function to find label for an input
-function findLabel(input) {
-    const id = input.id;
-    if (id) {
-        const label = document.querySelector(`label[for="${id}"]`);
-        if (label) return label.textContent;
-    }
-    return '';
-}
-
-// Function to fill form fields with AI-suggested mappings
+// Update fillFormFields function to handle the mappings directly
 function fillFormFields(mappings) {
+    debugLog('Attempting to fill fields with mappings:', mappings);
+    
     // Keep track of filled fields for cleanup
     const filledFields = [];
 
-    Object.entries(mappings).forEach(([fieldId, value]) => {
-        // Handle phone number specially
+    // Ensure mappings is not wrapped in another object
+    const actualMappings = mappings.mappings || mappings;
+
+    Object.entries(actualMappings).forEach(([fieldId, value]) => {
+        debugLog(`Trying to fill field "${fieldId}" with value:`, value);
+        
+        // Special handling for phone fields
         if (fieldId === 'phone') {
-            const phoneInput = document.querySelector('input[name="phone"]');
+            // Try selectors in order of specificity
+            const phoneInput = 
+                document.querySelector('input[name="phone"]') ||  // First try exact name match
+                document.querySelector('input[type="tel"]') ||    // Then try tel type
+                document.querySelector('.vti__input') ||         // Then try specific classes
+                document.querySelector('[aria-label*="phone" i]'); // Finally try aria labels
+
             if (phoneInput) {
+                debugLog(`Found phone input:`, {
+                    tagName: phoneInput.tagName,
+                    type: phoneInput.type,
+                    class: phoneInput.className,
+                    currentValue: phoneInput.value,
+                    path: getElementPath(phoneInput)  // Log the DOM path to help debug
+                });
+
+                // Clean the phone number
                 const cleanPhone = value.replace(/[^0-9+]/g, '');
                 
-                const countrySelect = document.getElementById('country_code') || 
-                                    document.querySelector('select[name="country_code"]');
+                // Set the value
+                phoneInput.value = cleanPhone;
                 
-                if (countrySelect) {
-                    if (cleanPhone.startsWith('+31') || cleanPhone.startsWith('0031')) {
-                        countrySelect.value = 'NL';
-                        phoneInput.value = cleanPhone.replace(/^\+31|^0031/, '0');
-                    } else if (cleanPhone.startsWith('0')) {
-                        countrySelect.value = 'NL';
-                        phoneInput.value = cleanPhone;
-                    } else {
-                        phoneInput.value = cleanPhone;
-                    }
-                    
-                    countrySelect.dispatchEvent(new Event('change', { bubbles: true }));
-                    highlightField(countrySelect);
-                    filledFields.push(countrySelect);
-                } else {
-                    phoneInput.value = cleanPhone;
-                }
-                
+                // Trigger events in the correct order
+                phoneInput.dispatchEvent(new Event('focus', { bubbles: true }));
+                phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
                 phoneInput.dispatchEvent(new Event('change', { bubbles: true }));
+                phoneInput.dispatchEvent(new Event('blur', { bubbles: true }));
+
                 highlightField(phoneInput);
                 filledFields.push(phoneInput);
+                
+                debugLog(`Successfully filled phone field with value:`, cleanPhone);
+            } else {
+                debugLog('Could not find phone input field. Available inputs:', 
+                    Array.from(document.querySelectorAll('input')).map(input => ({
+                        tagName: input.tagName,
+                        type: input.type,
+                        name: input.name,
+                        class: input.className,
+                        path: getElementPath(input)
+                    }))
+                );
             }
         } else {
-            const element = document.getElementById(fieldId) || 
-                           document.getElementsByName(fieldId)[0];
+            // Regular field handling
+            const element = 
+                document.getElementById(fieldId) || 
+                document.getElementsByName(fieldId)[0] ||
+                document.querySelector(`[data-field="${fieldId}"]`) ||
+                document.querySelector(`[data-test-id="${fieldId}"]`) ||
+                document.querySelector(`input[name="${fieldId}"]`) ||
+                document.querySelector(`[data-name="${fieldId}"]`) ||
+                document.querySelector(`[aria-label="${fieldId}"]`);
+
             if (element) {
+                debugLog(`Found element for "${fieldId}":`, {
+                    tagName: element.tagName,
+                    type: element.type,
+                    currentValue: element.value
+                });
+
                 element.value = value;
                 element.dispatchEvent(new Event('change', { bubbles: true }));
+                element.dispatchEvent(new Event('input', { bubbles: true }));
                 highlightField(element);
                 filledFields.push(element);
+                
+                debugLog(`Successfully filled "${fieldId}" with value:`, value);
+            } else {
+                debugLog(`Could not find element for "${fieldId}". Trying alternative selectors...`);
+                // Log all potential matching elements for debugging
+                const allInputs = document.querySelectorAll('input, select, textarea');
+                Array.from(allInputs).forEach(input => {
+                    debugLog('Available field:', {
+                        id: input.id,
+                        name: input.name,
+                        'data-field': input.getAttribute('data-field'),
+                        'aria-label': input.getAttribute('aria-label'),
+                        type: input.type,
+                        class: input.className
+                    });
+                });
             }
         }
     });
 
-    // Remove highlights after 3 seconds instead of 5
+    debugLog(`Filled ${filledFields.length} fields out of ${Object.keys(actualMappings).length} mappings`);
+
+    // Remove highlights after 3 seconds
     setTimeout(() => {
         filledFields.forEach(element => {
             removeHighlight(element);

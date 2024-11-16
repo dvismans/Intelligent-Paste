@@ -92,6 +92,46 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         debugLog(request.message);
         return;
     }
+
+    if (request.action === 'captureVisibleTab') {
+        debugLog('Attempting to capture screenshot');
+        try {
+            chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+                if (!tabs[0]) {
+                    debugLog('No active tab found');
+                    sendResponse({ error: 'No active tab' });
+                    return;
+                }
+                
+                chrome.tabs.captureVisibleTab(
+                    tabs[0].windowId,
+                    { format: 'png' },
+                    (dataUrl) => {
+                        if (chrome.runtime.lastError) {
+                            debugLog('Screenshot capture error:', chrome.runtime.lastError);
+                            sendResponse({ error: chrome.runtime.lastError.message });
+                            return;
+                        }
+                        
+                        if (!dataUrl) {
+                            debugLog('No screenshot data received');
+                            sendResponse({ error: 'Failed to capture screenshot' });
+                            return;
+                        }
+
+                        // Remove the data:image/png;base64, prefix
+                        const imageData = dataUrl.split(',')[1];
+                        debugLog('Screenshot captured successfully');
+                        sendResponse({ imageData });
+                    }
+                );
+            });
+        } catch (error) {
+            debugLog('Error in screenshot capture:', error);
+            sendResponse({ error: error.message });
+        }
+        return true;
+    }
 });
 
 async function validateApiKey(apiKey) {
@@ -128,160 +168,168 @@ async function validateApiKey(apiKey) {
     }
 }
 
-async function handleIntelligentPaste(clipboardText, formFields, imageBase64 = null) {
-    debugLog('=== Starting Intelligent Paste Request ===');
-    debugLog('Processing clipboard text:', clipboardText);
-    debugLog('Form fields:', formFields);
-    debugLog('Image included:', !!imageBase64);
+// Add pricing constants at the top
+const PRICING = {
+    'gpt-4-1106-vision-preview': {
+        input: 0.01,    // $0.01 per 1K input tokens
+        output: 0.03,   // $0.03 per 1K output tokens
+        image: 0.00765  // $0.00765 per image
+    }
+};
 
+// Modify handleIntelligentPaste to calculate and show costs
+async function handleIntelligentPaste(clipboardText, formFields, imageBase64 = null, screenshotBase64 = null, pageHtml = '', hasProperForm = false) {
+    debugLog('=== Starting Intelligent Paste Request ===');
+    
     try {
         const messages = [{
             role: "system",
-            content: "You are a form-filling assistant. Your task is to analyze clipboard content and map it to form fields. Return only a valid JSON object where keys are field IDs/names and values are the extracted content."
+            content: "You are a form-filling assistant. Analyze the form structure and content, then map the clipboard content to the appropriate form fields. Return ONLY a JSON object with field IDs as keys and values to fill in."
         }];
 
-        // If we have an image, use GPT-4 Vision
+        const formAnalysisMessage = {
+            role: "user",
+            content: [
+                {
+                    type: "text",
+                    text: `Here's the task:
+
+1. This is the form structure with available fields:
+${JSON.stringify(formFields, null, 2)}
+
+${!hasProperForm ? `2. Here's the form HTML for context:
+${pageHtml.substring(0, 1000)}...` : ''}
+
+${imageBase64 ? 'Analyze this image and extract information to fill the form fields.' : 'Analyze this text and extract information to fill the form fields.'}
+
+Return ONLY a JSON object where:
+- Keys must be the exact field IDs from the form fields list
+- Values should be the content to fill in each field
+
+Example response:
+{
+    "first_name": "John",
+    "email": "john@example.com"
+}`
+                }
+            ]
+        };
+
+        // Add clipboard content (image or text)
         if (imageBase64) {
-            debugLog('Using GPT-4 Turbo with Vision');
-            messages.push({
-                role: "user",
-                content: [
-                    {
-                        type: "text",
-                        text: `Analyze this image and extract information to fill a form. Only extract information that is clearly visible in the image.
-
-For each form field below:
-1. Only fill fields where you are highly confident about the information
-2. Maintain the exact format of data as shown in the image
-3. Do not make assumptions or guess information
-4. Leave fields empty (do not include in JSON) if you're not certain
-
-Available form fields:
-${JSON.stringify(formFields, null, 2)}
-
-Return ONLY a JSON object with field IDs as keys and extracted values as values.
-Do not include any explanations or markdown formatting.
-Example format:
-{
-    "first_name": "John",
-    "email": "john@example.com"
-}`
-                    },
-                    {
-                        type: "image_url",
-                        image_url: {
-                            url: `data:image/png;base64,${imageBase64}`
-                        }
-                    }
-                ]
+            formAnalysisMessage.content.push({
+                type: "image_url",
+                image_url: {
+                    url: `data:image/png;base64,${imageBase64}`
+                }
             });
-
-            const requestBody = {
-                model: "gpt-4-1106-vision-preview",
-                messages: messages,
-                max_tokens: 1000,
-                temperature: 0.3
-            };
-
-            debugLog('Sending request to GPT-4 Vision');
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`
-                },
-                body: JSON.stringify(requestBody)
+        } else if (clipboardText) {
+            formAnalysisMessage.content.push({
+                type: "text",
+                text: `Content to fill the form with:\n${clipboardText}`
             });
-
-            debugLog('Processing response...');
-            const responseText = await response.text();
-            debugLog('Raw Vision Response:', responseText);
-
-            if (!response.ok) {
-                throw new Error(`OpenAI API error (${response.status}): ${responseText}`);
-            }
-
-            const data = JSON.parse(responseText);
-            debugLog('Parsed Vision Response:', data);
-
-            let mappingsText = data.choices[0].message.content;
-            if (mappingsText.includes('```json')) {
-                mappingsText = mappingsText.split('```json\n')[1].split('```')[0];
-            } else if (mappingsText.includes('```')) {
-                mappingsText = mappingsText.split('```\n')[1].split('```')[0];
-            }
-
-            const mappings = JSON.parse(mappingsText.trim());
-            debugLog('Vision Mappings:', mappings);
-            return mappings;
-        } else {
-            // Handle text-only case
-            debugLog('Using GPT-4 for text analysis');
-            messages.push({
-                role: "user",
-                content: `Extract information from the following text to fill a form. Only extract information that is explicitly present in the text.
-
-For each form field below:
-1. Only fill fields where you are highly confident about the information
-2. Maintain the exact format of data as shown in the text
-3. Do not make assumptions or guess information
-4. Leave fields empty (do not include in JSON) if you're not certain
-
-Clipboard text:
-${clipboardText}
-
-Available form fields:
-${JSON.stringify(formFields, null, 2)}
-
-Return ONLY a JSON object with field IDs as keys and extracted values as values.
-Do not include any explanations or markdown formatting.
-Example format:
-{
-    "first_name": "John",
-    "email": "john@example.com"
-}`
-            });
-
-            const requestBody = {
-                model: "gpt-4-turbo-preview",
-                messages: messages,
-                max_tokens: 1000,
-                temperature: 0.3
-            };
-
-            debugLog('Sending request to GPT-4');
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const responseText = await response.text();
-            debugLog('Raw Text Response:', responseText);
-
-            if (!response.ok) {
-                throw new Error(`OpenAI API error (${response.status}): ${responseText}`);
-            }
-
-            const data = JSON.parse(responseText);
-            debugLog('Parsed Text Response:', data);
-
-            let mappingsText = data.choices[0].message.content;
-            if (mappingsText.includes('```json')) {
-                mappingsText = mappingsText.split('```json\n')[1].split('```')[0];
-            } else if (mappingsText.includes('```')) {
-                mappingsText = mappingsText.split('```\n')[1].split('```')[0];
-            }
-
-            const mappings = JSON.parse(mappingsText.trim());
-            debugLog('Text Mappings:', mappings);
-            return mappings;
         }
+
+        // Only add screenshot if we don't have a proper form
+        if (!hasProperForm && screenshotBase64) {
+            formAnalysisMessage.content.push({
+                type: "image_url",
+                image_url: {
+                    url: `data:image/png;base64,${screenshotBase64}`
+                }
+            });
+        }
+
+        messages.push(formAnalysisMessage);
+
+        const requestBody = {
+            model: "gpt-4-1106-vision-preview",
+            messages: messages,
+            max_tokens: 1000,
+            temperature: 0.3
+        };
+
+        debugLog('Sending request to GPT-4 Vision');
+        debugLog('Request messages:', messages);
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        const responseText = await response.text();
+        debugLog('Raw Response:', responseText);
+
+        if (!response.ok) {
+            throw new Error(`OpenAI API error (${response.status}): ${responseText}`);
+        }
+
+        const data = JSON.parse(responseText);
+        debugLog('Parsed Response:', data);
+
+        // Calculate costs
+        const inputTokens = data.usage.prompt_tokens;
+        const outputTokens = data.usage.completion_tokens;
+        const imageCount = (imageBase64 ? 1 : 0) + (screenshotBase64 ? 1 : 0);
+        
+        const cost = calculateCost(inputTokens, outputTokens, imageCount);
+        debugLog('Usage Statistics:', {
+            inputTokens,
+            outputTokens,
+            imageCount,
+            cost: `$${cost.toFixed(4)}`,
+            breakdown: {
+                inputCost: `$${((inputTokens / 1000) * PRICING['gpt-4-1106-vision-preview'].input).toFixed(4)}`,
+                outputCost: `$${((outputTokens / 1000) * PRICING['gpt-4-1106-vision-preview'].output).toFixed(4)}`,
+                imageCost: `$${(imageCount * PRICING['gpt-4-1106-vision-preview'].image).toFixed(4)}`
+            }
+        });
+
+        // Extract JSON from response and return with cost info
+        let content = data.choices[0].message.content;
+        if (content.includes('```json')) {
+            content = content.split('```json')[1].split('```')[0].trim();
+        } else if (content.includes('```')) {
+            content = content.split('```')[1].split('```')[0].trim();
+        }
+        
+        const jsonMatch = content.match(/\{[^]*\}/);
+        if (jsonMatch) {
+            content = jsonMatch[0];
+        }
+
+        const mappings = JSON.parse(content);
+        debugLog('Final Mappings:', mappings);
+        
+        return { 
+            mappings,
+            cost: {
+                total: cost,
+                inputTokens,
+                outputTokens,
+                imageCount,
+                breakdown: {
+                    inputCost: (inputTokens / 1000) * PRICING['gpt-4-1106-vision-preview'].input,
+                    outputCost: (outputTokens / 1000) * PRICING['gpt-4-1106-vision-preview'].output,
+                    imageCost: imageCount * PRICING['gpt-4-1106-vision-preview'].image
+                }
+            }
+        };
     } catch (error) {
         debugLog('Error in OpenAI call:', error);
         throw error;
     }
+}
+
+// Add helper function to calculate cost
+function calculateCost(inputTokens, outputTokens, imageCount) {
+    const pricing = PRICING['gpt-4-1106-vision-preview'];
+    const inputCost = (inputTokens / 1000) * pricing.input;
+    const outputCost = (outputTokens / 1000) * pricing.output;
+    const imageCost = imageCount * pricing.image;
+    return inputCost + outputCost + imageCost;
 } 
