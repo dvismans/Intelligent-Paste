@@ -394,6 +394,7 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
     // Remove existing floating window if it exists
     if (currentFloatingWindow) {
         currentFloatingWindow.remove();
+        currentFloatingWindow = null;
     }
 
     const container = document.createElement('div');
@@ -410,7 +411,10 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
     const closeButton = document.createElement('button');
     closeButton.style.cssText = commonStyles.closeButton;
     closeButton.innerHTML = '×';
-    closeButton.onclick = () => container.remove();
+    closeButton.onclick = () => {
+        container.remove();
+        currentFloatingWindow = null;
+    };
     
     header.appendChild(title);
     header.appendChild(closeButton);
@@ -469,13 +473,55 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                 item.onclick = async () => {
                     try {
                         const textToCopy = typeof value === 'object' ? JSON.stringify(value) : value;
+                        
+                        // Get the currently focused element
+                        const activeElement = document.activeElement;
+                        const isFormField = activeElement && 
+                            (activeElement.tagName === 'INPUT' || 
+                             activeElement.tagName === 'TEXTAREA' || 
+                             activeElement.tagName === 'SELECT' ||
+                             activeElement.isContentEditable);
+
+                        // Copy to clipboard
                         await navigator.clipboard.writeText(textToCopy);
+
+                        // Update the indicator text based on action
+                        copyIndicator.textContent = isFormField ? 'Inserted!' : 'Copied!';
                         copyIndicator.style.opacity = '1';
                         setTimeout(() => {
                             copyIndicator.style.opacity = '0';
                         }, 1000);
+
+                        // If a form field is focused, insert the value
+                        if (isFormField) {
+                            if (activeElement.tagName === 'SELECT') {
+                                // For select elements, try to find matching option
+                                const options = Array.from(activeElement.options);
+                                const matchingOption = options.find(opt => 
+                                    opt.text.toLowerCase().includes(textToCopy.toLowerCase()) ||
+                                    opt.value.toLowerCase().includes(textToCopy.toLowerCase())
+                                );
+                                if (matchingOption) {
+                                    activeElement.value = matchingOption.value;
+                                }
+                            } else {
+                                // For other input types
+                                activeElement.value = textToCopy;
+                            }
+
+                            // Trigger change event
+                            activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+                            activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+                            
+                            // Add visual feedback
+                            const originalBackground = activeElement.style.backgroundColor;
+                            activeElement.style.backgroundColor = '#e3f2fd';
+                            setTimeout(() => {
+                                activeElement.style.backgroundColor = originalBackground;
+                            }, 500);
+                        }
                     } catch (error) {
-                        console.error('Failed to copy:', error);
+                        console.error('Failed to copy/insert:', error);
                     }
                 };
                 
@@ -535,13 +581,55 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                     item.onclick = async () => {
                         try {
                             const textToCopy = typeof value === 'object' ? JSON.stringify(value) : value;
+                            
+                            // Get the currently focused element
+                            const activeElement = document.activeElement;
+                            const isFormField = activeElement && 
+                                (activeElement.tagName === 'INPUT' || 
+                                 activeElement.tagName === 'TEXTAREA' || 
+                                 activeElement.tagName === 'SELECT' ||
+                                 activeElement.isContentEditable);
+
+                            // Copy to clipboard
                             await navigator.clipboard.writeText(textToCopy);
+
+                            // Update the indicator text based on action
+                            copyIndicator.textContent = isFormField ? 'Inserted!' : 'Copied!';
                             copyIndicator.style.opacity = '1';
                             setTimeout(() => {
                                 copyIndicator.style.opacity = '0';
                             }, 1000);
+
+                            // If a form field is focused, insert the value
+                            if (isFormField) {
+                                if (activeElement.tagName === 'SELECT') {
+                                    // For select elements, try to find matching option
+                                    const options = Array.from(activeElement.options);
+                                    const matchingOption = options.find(opt => 
+                                        opt.text.toLowerCase().includes(textToCopy.toLowerCase()) ||
+                                        opt.value.toLowerCase().includes(textToCopy.toLowerCase())
+                                    );
+                                    if (matchingOption) {
+                                        activeElement.value = matchingOption.value;
+                                    }
+                                } else {
+                                    // For other input types
+                                    activeElement.value = textToCopy;
+                                }
+
+                                // Trigger change event
+                                activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+                                activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+                                
+                                // Add visual feedback
+                                const originalBackground = activeElement.style.backgroundColor;
+                                activeElement.style.backgroundColor = '#e3f2fd';
+                                setTimeout(() => {
+                                    activeElement.style.backgroundColor = originalBackground;
+                                }, 500);
+                            }
                         } catch (error) {
-                            console.error('Failed to copy:', error);
+                            console.error('Failed to copy/insert:', error);
                         }
                     };
                     
@@ -679,6 +767,12 @@ async function handlePaste(e) {
     // Prevent recursive paste handling
     if (isProcessingPaste) {
         debugLog('Already processing a paste event, skipping');
+        return;
+    }
+
+    // If floating window is open, let the default paste behavior happen
+    if (currentFloatingWindow) {
+        debugLog('Floating window is open, allowing normal paste');
         return;
     }
 

@@ -3,7 +3,7 @@ chrome.devtools.panels.create(
     "Intelligent Paste",
     null,
     "panel.html",
-    function(panel) {
+    (panel) => {
         console.log("DevTools panel created");
     }
 );
@@ -11,4 +11,9 @@ chrome.devtools.panels.create(
 // Create a connection to the background page
 const backgroundPageConnection = chrome.runtime.connect({
     name: "devtools-page"
+});
+
+// Relay messages from the panel to the background script
+backgroundPageConnection.onMessage.addListener((message) => {
+    console.log('DevTools received message:', message);
 }); 
