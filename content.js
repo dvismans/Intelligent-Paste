@@ -54,76 +54,104 @@ function debugLog(message, data = null) {
 // Add this at the top of the file
 let isProcessingPaste = false;
 
-// Add this function to create a step tracker
-function createStepTracker() {
-    const tracker = document.createElement('div');
-    tracker.style.cssText = `
+// Update the common styles object
+const commonStyles = {
+    backdrop: `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 9999;
+        pointer-events: none;
+    `,
+    popup: `
         position: fixed;
         top: 20px;
         right: 20px;
         background: white;
-        border: 1px solid #2196F3;
-        border-radius: 5px;
-        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
         z-index: 10000;
-        width: 300px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         font-family: Arial, sans-serif;
-    `;
-
-    const title = document.createElement('div');
-    title.style.cssText = `
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05);
+        overflow: hidden;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+    `,
+    header: `
+        background: #f8f9fa;
+        padding: 12px 16px;
+        border-bottom: 1px solid #ddd;
         font-weight: bold;
-        margin-bottom: 10px;
-    `;
-    title.textContent = 'Intelligent Paste';
-
-    const status = document.createElement('div');
-    status.style.cssText = `
-        margin-bottom: 10px;
+        color: #1a1a1a;
         font-size: 14px;
-        color: #666;
-    `;
-
-    // Only show progress bar for image upload
-    const progressContainer = document.createElement('div');
-    progressContainer.style.cssText = `
-        display: none;
-        margin-top: 8px;
-    `;
-
-    const progressLabel = document.createElement('div');
-    progressLabel.style.cssText = `
-        font-size: 12px;
-        color: #666;
-        margin-bottom: 4px;
-    `;
-    progressLabel.textContent = 'Upload Progress';
-
-    const progressBar = document.createElement('div');
-    progressBar.style.cssText = `
+    `,
+    content: `
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.95);
+    `,
+    message: `
+        font-size: 14px;
+        color: #444;
+        margin-bottom: 10px;
+        line-height: 1.4;
+    `,
+    progressContainer: `
+        margin-top: 12px;
+    `,
+    progressBar: `
         width: 100%;
         height: 4px;
         background: #eee;
-        border-radius: 2px;
+        border-radius: 4px;
         overflow: hidden;
-    `;
-
-    const progress = document.createElement('div');
-    progress.style.cssText = `
+    `,
+    progressFill: `
         width: 0%;
         height: 100%;
-        background: #2196F3;
+        background: #666;
         transition: width 0.3s ease;
-    `;
+    `
+};
+
+// Update createStepTracker to include backdrop
+function createStepTracker() {
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = commonStyles.backdrop;
+    document.body.appendChild(backdrop);
+
+    const tracker = document.createElement('div');
+    tracker.style.cssText = commonStyles.popup + 'width: 300px;';
+
+    const header = document.createElement('div');
+    header.style.cssText = commonStyles.header;
+    header.textContent = 'Intelligent Paste';
+
+    const content = document.createElement('div');
+    content.style.cssText = commonStyles.content;
+
+    const status = document.createElement('div');
+    status.style.cssText = commonStyles.message;
+
+    const progressContainer = document.createElement('div');
+    progressContainer.style.cssText = commonStyles.progressContainer + 'display: none;';
+
+    const progressBar = document.createElement('div');
+    progressBar.style.cssText = commonStyles.progressBar;
+
+    const progress = document.createElement('div');
+    progress.style.cssText = commonStyles.progressFill;
 
     progressBar.appendChild(progress);
-    progressContainer.appendChild(progressLabel);
     progressContainer.appendChild(progressBar);
 
-    tracker.appendChild(title);
-    tracker.appendChild(status);
-    tracker.appendChild(progressContainer);
+    content.appendChild(status);
+    content.appendChild(progressContainer);
+    
+    tracker.appendChild(header);
+    tracker.appendChild(content);
     document.body.appendChild(tracker);
 
     return {
@@ -136,9 +164,11 @@ function createStepTracker() {
         },
         updateProgress: (percent) => {
             progress.style.width = `${percent}%`;
-            progressLabel.textContent = `Upload Progress: ${Math.round(percent)}%`;
         },
-        remove: () => tracker.remove()
+        remove: () => {
+            tracker.remove();
+            backdrop.remove();
+        }
     };
 }
 
@@ -360,25 +390,41 @@ function getAllFormFields() {
     return formFields;
 }
 
-// Helper function to show notifications
+// Update showNotification to include backdrop
 function showNotification(message, type) {
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = commonStyles.backdrop;
+    document.body.appendChild(backdrop);
+
     const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 15px;
-        border-radius: 5px;
-        z-index: 10000;
-        color: white;
-        background: ${type === 'success' ? '#4CAF50' : '#f44336'};
-    `;
-    notification.textContent = message;
+    notification.style.cssText = commonStyles.popup + 'width: 300px;';
+
+    const header = document.createElement('div');
+    header.style.cssText = commonStyles.header;
+    header.textContent = 'Intelligent Paste';
+
+    const content = document.createElement('div');
+    content.style.cssText = commonStyles.content;
+
+    const messageDiv = document.createElement('div');
+    messageDiv.style.cssText = commonStyles.message;
+    messageDiv.textContent = message;
+    messageDiv.style.color = type === 'success' ? '#4CAF50' : '#f44336';
+
+    content.appendChild(messageDiv);
+    notification.appendChild(header);
+    notification.appendChild(content);
     document.body.appendChild(notification);
     
-    // Remove notification after 3 seconds
     setTimeout(() => {
-        notification.remove();
+        notification.style.opacity = '0';
+        backdrop.style.opacity = '0';
+        notification.style.transition = 'opacity 0.3s ease';
+        backdrop.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => {
+            notification.remove();
+            backdrop.remove();
+        }, 300);
     }, 3000);
 }
 

@@ -3,15 +3,33 @@
 <head>
     <style>
         body {
-            width: 300px;
-            padding: 10px;
+            width: 320px;
+            padding: 16px;
             font-family: Arial, sans-serif;
+            margin: 0;
+        }
+        h2 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            color: #333;
+        }
+        .toggle-section {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 8px 0;
+        }
+        .toggle-label {
+            margin-left: 12px;
+            font-size: 14px;
+            color: #444;
         }
         .switch {
             position: relative;
             display: inline-block;
-            width: 60px;
-            height: 34px;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
         }
         .switch input {
             opacity: 0;
@@ -26,36 +44,52 @@
             right: 0;
             bottom: 0;
             background-color: #ccc;
-            transition: .4s;
-            border-radius: 34px;
+            transition: .3s;
+            border-radius: 24px;
         }
         .slider:before {
             position: absolute;
             content: "";
-            height: 26px;
-            width: 26px;
-            left: 4px;
-            bottom: 4px;
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
             background-color: white;
-            transition: .4s;
+            transition: .3s;
             border-radius: 50%;
         }
         input:checked + .slider {
             background-color: #2196F3;
         }
         input:checked + .slider:before {
-            transform: translateX(26px);
+            transform: translateX(20px);
         }
         .api-key-section {
-            margin-top: 20px;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 8px;
+        }
+        .api-key-label {
+            display: block;
+            font-size: 14px;
+            color: #444;
+            margin-bottom: 8px;
         }
         .api-key-input {
-            width: 100%;
+            width: calc(100% - 16px);
             padding: 8px;
-            margin-top: 5px;
-            margin-bottom: 10px;
-            border: 1px solid #ccc;
+            margin-bottom: 12px;
+            border: 1px solid #ddd;
             border-radius: 4px;
+            font-size: 13px;
+            font-family: monospace;
+        }
+        .api-key-input:focus {
+            outline: none;
+            border-color: #2196F3;
+            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
         }
         .save-button {
             background-color: #2196F3;
@@ -64,39 +98,56 @@
             padding: 8px 16px;
             border-radius: 4px;
             cursor: pointer;
+            font-size: 13px;
+            width: 100%;
+            transition: background-color 0.2s;
         }
         .save-button:hover {
             background-color: #1976D2;
         }
+        .save-button:active {
+            background-color: #1565C0;
+        }
         .status-message {
-            margin-top: 10px;
-            padding: 8px;
+            margin-top: 12px;
+            padding: 8px 12px;
             border-radius: 4px;
             display: none;
+            font-size: 13px;
+            text-align: center;
         }
         .success {
-            background-color: #4CAF50;
-            color: white;
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
         }
         .error {
-            background-color: #f44336;
-            color: white;
+            background-color: #fbe9e7;
+            color: #d32f2f;
+            border: 1px solid #ffcdd2;
         }
     </style>
 </head>
 <body>
     <h2>Intelligent Paste</h2>
-    <div>
+    
+    <div class="toggle-section">
         <label class="switch">
             <input type="checkbox" id="enableIntelligentPaste" checked>
             <span class="slider"></span>
         </label>
-        <span>Enable Intelligent Paste</span>
+        <span class="toggle-label">Enable Intelligent Paste</span>
     </div>
 
     <div class="api-key-section">
-        <label for="apiKey">OpenAI API Key:</label>
-        <input type="password" id="apiKey" class="api-key-input" placeholder="Enter your OpenAI API key">
+        <label class="api-key-label" for="apiKey">OpenAI API Key</label>
+        <input 
+            type="password" 
+            id="apiKey" 
+            class="api-key-input" 
+            placeholder="sk-..."
+            spellcheck="false"
+        >
         <button id="saveApiKey" class="save-button">Save API Key</button>
     </div>
 
