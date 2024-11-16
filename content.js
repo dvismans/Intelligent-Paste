@@ -113,6 +113,16 @@ const commonStyles = {
         height: 100%;
         background: #666;
         transition: width 0.3s ease;
+    `,
+    filledField: `
+        background-color: rgba(33, 150, 243, 0.05) !important;
+        border-color: #2196F3 !important;
+        box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.2) !important;
+        transition: all 0.3s ease !important;
+    `,
+    filledLabel: `
+        color: #2196F3 !important;
+        font-weight: bold !important;
     `
 };
 
@@ -390,7 +400,7 @@ function getAllFormFields() {
     return formFields;
 }
 
-// Update showNotification to include backdrop
+// Update showNotification function
 function showNotification(message, type) {
     const backdrop = document.createElement('div');
     backdrop.style.cssText = commonStyles.backdrop;
@@ -416,16 +426,19 @@ function showNotification(message, type) {
     notification.appendChild(content);
     document.body.appendChild(notification);
     
+    // Remove backdrop immediately after showing notification
+    setTimeout(() => {
+        backdrop.remove();
+    }, 100);
+
+    // Keep the notification visible for longer
     setTimeout(() => {
         notification.style.opacity = '0';
-        backdrop.style.opacity = '0';
         notification.style.transition = 'opacity 0.3s ease';
-        backdrop.style.transition = 'opacity 0.3s ease';
         setTimeout(() => {
             notification.remove();
-            backdrop.remove();
         }, 300);
-    }, 3000);
+    }, 2000);
 }
 
 // Helper function to find label for an input
@@ -440,53 +453,117 @@ function findLabel(input) {
 
 // Function to fill form fields with AI-suggested mappings
 function fillFormFields(mappings) {
+    // Keep track of filled fields for cleanup
+    const filledFields = [];
+
     Object.entries(mappings).forEach(([fieldId, value]) => {
         // Handle phone number specially
         if (fieldId === 'phone') {
-            // Try to find phone input by name since it might not have an ID
             const phoneInput = document.querySelector('input[name="phone"]');
             if (phoneInput) {
-                // Clean the phone number (remove spaces, dashes, etc.)
                 const cleanPhone = value.replace(/[^0-9+]/g, '');
                 
-                // Check if there's a country code selector
                 const countrySelect = document.getElementById('country_code') || 
                                     document.querySelector('select[name="country_code"]');
                 
                 if (countrySelect) {
-                    // If phone starts with +31 or 0031, select Netherlands
                     if (cleanPhone.startsWith('+31') || cleanPhone.startsWith('0031')) {
                         countrySelect.value = 'NL';
-                        // Remove country code from phone number
                         phoneInput.value = cleanPhone.replace(/^\+31|^0031/, '0');
                     } else if (cleanPhone.startsWith('0')) {
-                        // If starts with 0, assume it's a local number
-                        countrySelect.value = 'NL'; // or get from browser locale
+                        countrySelect.value = 'NL';
                         phoneInput.value = cleanPhone;
                     } else {
-                        // Just set the phone number as is
                         phoneInput.value = cleanPhone;
                     }
                     
-                    // Trigger change event on country select
                     countrySelect.dispatchEvent(new Event('change', { bubbles: true }));
+                    highlightField(countrySelect);
+                    filledFields.push(countrySelect);
                 } else {
-                    // No country selector, just set the phone number
                     phoneInput.value = cleanPhone;
                 }
                 
-                // Trigger change event on phone input
                 phoneInput.dispatchEvent(new Event('change', { bubbles: true }));
+                highlightField(phoneInput);
+                filledFields.push(phoneInput);
             }
         } else {
-            // Handle all other fields normally
             const element = document.getElementById(fieldId) || 
                            document.getElementsByName(fieldId)[0];
             if (element) {
                 element.value = value;
-                // Trigger change event
                 element.dispatchEvent(new Event('change', { bubbles: true }));
+                highlightField(element);
+                filledFields.push(element);
             }
         }
     });
+
+    // Remove highlights after 3 seconds instead of 5
+    setTimeout(() => {
+        filledFields.forEach(element => {
+            removeHighlight(element);
+        });
+    }, 3000);
+}
+
+// Function to highlight a filled field
+function highlightField(element) {
+    // Save original styles
+    element.dataset.originalStyle = element.style.cssText;
+    
+    // Add highlight styles to the field
+    element.style.cssText += commonStyles.filledField;
+
+    // Find and highlight the label if it exists
+    const label = findLabelForElement(element);
+    if (label) {
+        label.dataset.originalStyle = label.style.cssText;
+        label.style.cssText += commonStyles.filledLabel;
+    }
+}
+
+// Function to remove highlight
+function removeHighlight(element) {
+    // Restore original styles with smooth transition
+    if (element.dataset.originalStyle !== undefined) {
+        element.style.cssText = element.dataset.originalStyle;
+        delete element.dataset.originalStyle;
+    }
+
+    // Remove highlight from label
+    const label = findLabelForElement(element);
+    if (label && label.dataset.originalStyle !== undefined) {
+        label.style.cssText = label.dataset.originalStyle;
+        delete label.dataset.originalStyle;
+    }
+}
+
+// Helper function to find label for an element
+function findLabelForElement(element) {
+    // Try to find label by for attribute
+    if (element.id) {
+        const label = document.querySelector(`label[for="${element.id}"]`);
+        if (label) return label;
+    }
+
+    // Try to find label as parent
+    let parent = element.parentElement;
+    while (parent) {
+        if (parent.tagName === 'LABEL') {
+            return parent;
+        }
+        parent = parent.parentElement;
+    }
+
+    // Try to find label as sibling
+    const siblings = element.parentElement?.children || [];
+    for (const sibling of siblings) {
+        if (sibling.tagName === 'LABEL') {
+            return sibling;
+        }
+    }
+
+    return null;
 } 
