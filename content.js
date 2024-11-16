@@ -474,16 +474,13 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                     try {
                         const textToCopy = typeof value === 'object' ? JSON.stringify(value) : value;
                         
-                        // Use the last focused element instead of active element
+                        // Get the currently focused element
                         const formElement = lastFocusedElement;
                         debugLog('Last focused element:', {
                             tagName: formElement?.tagName,
                             type: formElement?.type,
                             id: formElement?.id,
-                            className: formElement?.className,
-                            isContentEditable: formElement?.isContentEditable,
-                            role: formElement?.getAttribute('role'),
-                            contenteditable: formElement?.getAttribute('contenteditable')
+                            className: formElement?.className
                         });
 
                         const isFormField = formElement && (
@@ -492,8 +489,7 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                             formElement.tagName === 'SELECT' ||
                             formElement.isContentEditable ||
                             formElement.getAttribute('role') === 'textbox' ||
-                            formElement.getAttribute('contenteditable') === 'true' ||
-                            formElement.matches('input, textarea, select, [contenteditable="true"], [role="textbox"]')
+                            formElement.getAttribute('contenteditable') === 'true'
                         );
 
                         // Copy to clipboard
@@ -605,16 +601,13 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                         try {
                             const textToCopy = typeof value === 'object' ? JSON.stringify(value) : value;
                             
-                            // Use the last focused element instead of active element
+                            // Get the currently focused element
                             const formElement = lastFocusedElement;
                             debugLog('Last focused element:', {
                                 tagName: formElement?.tagName,
                                 type: formElement?.type,
                                 id: formElement?.id,
-                                className: formElement?.className,
-                                isContentEditable: formElement?.isContentEditable,
-                                role: formElement?.getAttribute('role'),
-                                contenteditable: formElement?.getAttribute('contenteditable')
+                                className: formElement?.className
                             });
 
                             const isFormField = formElement && (
@@ -623,8 +616,7 @@ function createFloatingClipboardWindow(clipboardText, imageBase64, extractedInfo
                                 formElement.tagName === 'SELECT' ||
                                 formElement.isContentEditable ||
                                 formElement.getAttribute('role') === 'textbox' ||
-                                formElement.getAttribute('contenteditable') === 'true' ||
-                                formElement.matches('input, textarea, select, [contenteditable="true"], [role="textbox"]')
+                                formElement.getAttribute('contenteditable') === 'true'
                             );
 
                             // Copy to clipboard
