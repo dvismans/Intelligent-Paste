@@ -150,6 +150,7 @@ async function handlePaste(e) {
         return;
     }
 
+    let stepTracker;
     try {
         debugLog('Paste event captured!');
         isProcessingPaste = true;
@@ -246,117 +247,97 @@ async function handlePaste(e) {
             return;
         }
 
-        debugLog('Processing clipboard content...');
+        stepTracker = createStepTracker();
         
-        // Add visual feedback
-        const feedback = createFeedbackElement('Processing intelligent paste...');
+        // Get all form fields from the page
+        const formFields = getAllFormFields();
         
-        let stepTracker;
-        try {
-            stepTracker = createStepTracker();
+        if (imageBase64) {
+            stepTracker.updateStep('Processing image...');
+            stepTracker.showProgress(true);
             
-            if (imageBase64) {
-                stepTracker.updateStep('Processing image...');
-                stepTracker.showProgress(true);
-                
-                // Simulate upload progress for the image
-                let progress = 0;
-                const uploadInterval = setInterval(() => {
-                    progress += 5;
-                    if (progress <= 95) {
-                        stepTracker.updateProgress(progress);
-                    }
-                }, 100);
+            // Simulate upload progress for the image
+            let progress = 0;
+            const uploadInterval = setInterval(() => {
+                progress += 5;
+                if (progress <= 95) {
+                    stepTracker.updateProgress(progress);
+                }
+            }, 100);
 
-                // Get all form elements from the page
-                const formFields = getAllFormFields();
-                
-                // Send message to background script
-                chrome.runtime.sendMessage({
-                    action: 'intelligentPaste',
-                    clipboardText,
-                    imageBase64,
-                    formFields
-                }, response => {
-                    clearInterval(uploadInterval);
-                    stepTracker.updateProgress(100);
-                    
-                    if (chrome.runtime.lastError) {
-                        stepTracker.updateStep('Error occurred');
-                        setTimeout(() => {
-                            stepTracker.remove();
-                            showNotification('Extension error. Please refresh the page.', 'error');
-                        }, 1000);
-                        return;
-                    }
-                    
-                    if (response?.error) {
-                        stepTracker.updateStep('Error occurred');
-                        setTimeout(() => {
-                            stepTracker.remove();
-                            showNotification(`Error: ${response.error}`, 'error');
-                        }, 1000);
-                        return;
-                    }
-                    
-                    if (response?.mappings) {
-                        stepTracker.updateStep('Filling form fields...');
-                        fillFormFields(response.mappings);
-                        stepTracker.updateStep('Complete!');
-                        setTimeout(() => {
-                            stepTracker.remove();
-                            showNotification('Form filled successfully!', 'success');
-                        }, 1000);
-                    } else {
-                        stepTracker.updateStep('Failed to process');
-                        setTimeout(() => {
-                            stepTracker.remove();
-                            showNotification('Failed to process paste', 'error');
-                        }, 1000);
-                    }
-                });
-            } else {
-                // Text-only processing
-                stepTracker.updateStep('Processing text...');
-                stepTracker.showProgress(false);
-                
-                // Get all form elements from the page
-                const formFields = getAllFormFields();
-                
-                // Rest of the code for text processing...
-            }
-        } catch (error) {
-            if (stepTracker) {
-                stepTracker.updateStep('Error occurred');
-                setTimeout(() => {
-                    stepTracker.remove();
-                }, 1000);
-            }
-            debugLog('Error in paste handler:', error);
-            showNotification('Extension error. Please refresh the page.', 'error');
+            // Send message to background script
+            chrome.runtime.sendMessage({
+                action: 'intelligentPaste',
+                clipboardText,
+                imageBase64,
+                formFields
+            }, response => {
+                clearInterval(uploadInterval);
+                handleResponse(response, stepTracker);
+            });
+        } else {
+            // Text-only processing
+            stepTracker.updateStep('Processing text...');
+            stepTracker.showProgress(false);
+            
+            // Send message to background script
+            chrome.runtime.sendMessage({
+                action: 'intelligentPaste',
+                clipboardText,
+                formFields
+            }, response => {
+                handleResponse(response, stepTracker);
+            });
         }
     } catch (error) {
         debugLog('Critical error in paste handler:', error);
+        if (stepTracker) {
+            stepTracker.updateStep('Error occurred');
+            setTimeout(() => stepTracker.remove(), 1000);
+        }
+        showNotification('Extension error. Please refresh the page.', 'error');
         isProcessingPaste = false;
-        return true;
     }
 }
 
-function createFeedbackElement(message) {
-    const feedback = document.createElement('div');
-    feedback.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #2196F3;
-        color: white;
-        padding: 15px;
-        border-radius: 5px;
-        z-index: 10000;
-    `;
-    feedback.textContent = message;
-    document.body.appendChild(feedback);
-    return feedback;
+// Add this helper function to handle responses
+function handleResponse(response, stepTracker) {
+    if (chrome.runtime.lastError) {
+        stepTracker.updateStep('Error occurred');
+        setTimeout(() => {
+            stepTracker.remove();
+            showNotification('Extension error. Please refresh the page.', 'error');
+        }, 1000);
+        isProcessingPaste = false;
+        return;
+    }
+    
+    if (response?.error) {
+        stepTracker.updateStep('Error occurred');
+        setTimeout(() => {
+            stepTracker.remove();
+            showNotification(`Error: ${response.error}`, 'error');
+        }, 1000);
+        isProcessingPaste = false;
+        return;
+    }
+    
+    if (response?.mappings) {
+        stepTracker.updateStep('Filling form fields...');
+        fillFormFields(response.mappings);
+        stepTracker.updateStep('Complete!');
+        setTimeout(() => {
+            stepTracker.remove();
+            showNotification('Form filled successfully!', 'success');
+        }, 1000);
+    } else {
+        stepTracker.updateStep('Failed to process');
+        setTimeout(() => {
+            stepTracker.remove();
+            showNotification('Failed to process paste', 'error');
+        }, 1000);
+    }
+    isProcessingPaste = false;
 }
 
 function getAllFormFields() {
@@ -414,10 +395,52 @@ function findLabel(input) {
 // Function to fill form fields with AI-suggested mappings
 function fillFormFields(mappings) {
     Object.entries(mappings).forEach(([fieldId, value]) => {
-        const element = document.getElementById(fieldId) || 
-                       document.getElementsByName(fieldId)[0];
-        if (element) {
-            element.value = value;
+        // Handle phone number specially
+        if (fieldId === 'phone') {
+            // Try to find phone input by name since it might not have an ID
+            const phoneInput = document.querySelector('input[name="phone"]');
+            if (phoneInput) {
+                // Clean the phone number (remove spaces, dashes, etc.)
+                const cleanPhone = value.replace(/[^0-9+]/g, '');
+                
+                // Check if there's a country code selector
+                const countrySelect = document.getElementById('country_code') || 
+                                    document.querySelector('select[name="country_code"]');
+                
+                if (countrySelect) {
+                    // If phone starts with +31 or 0031, select Netherlands
+                    if (cleanPhone.startsWith('+31') || cleanPhone.startsWith('0031')) {
+                        countrySelect.value = 'NL';
+                        // Remove country code from phone number
+                        phoneInput.value = cleanPhone.replace(/^\+31|^0031/, '0');
+                    } else if (cleanPhone.startsWith('0')) {
+                        // If starts with 0, assume it's a local number
+                        countrySelect.value = 'NL'; // or get from browser locale
+                        phoneInput.value = cleanPhone;
+                    } else {
+                        // Just set the phone number as is
+                        phoneInput.value = cleanPhone;
+                    }
+                    
+                    // Trigger change event on country select
+                    countrySelect.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                    // No country selector, just set the phone number
+                    phoneInput.value = cleanPhone;
+                }
+                
+                // Trigger change event on phone input
+                phoneInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        } else {
+            // Handle all other fields normally
+            const element = document.getElementById(fieldId) || 
+                           document.getElementsByName(fieldId)[0];
+            if (element) {
+                element.value = value;
+                // Trigger change event
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         }
     });
 } 

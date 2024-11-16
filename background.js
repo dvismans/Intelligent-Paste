@@ -142,7 +142,7 @@ async function handleIntelligentPaste(clipboardText, formFields, imageBase64 = n
 
         // If we have an image, use GPT-4 Vision
         if (imageBase64) {
-            debugLog('Using GPT-4 Vision for image analysis');
+            debugLog('Using GPT-4 Turbo with Vision');
             messages.push({
                 role: "user",
                 content: [
@@ -177,7 +177,7 @@ Example format:
             });
 
             const requestBody = {
-                model: "gpt-4-vision-preview",
+                model: "gpt-4-1106-vision-preview",
                 messages: messages,
                 max_tokens: 1000,
                 temperature: 0.3
