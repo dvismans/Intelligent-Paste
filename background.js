@@ -4,10 +4,21 @@ let devToolsConnection = null;
 // Add devtools connection handling
 chrome.runtime.onConnect.addListener((port) => {
     if (port.name === 'devtools-page') {
+        console.log('DevTools connected');
         devToolsConnection = port;
+        
+        // Send initial log to confirm connection
+        debugLog('DevTools connected');
+        
+        port.onMessage.addListener((msg) => {
+            if (msg.name === 'init') {
+                console.log('DevTools initialized with tab:', msg.tabId);
+            }
+        });
         
         // Remove the connection reference when devtools is closed
         port.onDisconnect.addListener(() => {
+            console.log('DevTools disconnected');
             devToolsConnection = null;
         });
     }
@@ -21,10 +32,15 @@ function debugLog(message, data = null) {
 
     // Send to devtools if connected
     if (devToolsConnection) {
-        devToolsConnection.postMessage({
-            type: 'log',
-            data: logMessage
-        });
+        try {
+            devToolsConnection.postMessage({
+                type: 'log',
+                data: logMessage
+            });
+        } catch (error) {
+            console.error('Error sending log to DevTools:', error);
+            devToolsConnection = null;  // Reset connection if sending fails
+        }
     }
 }
 
@@ -101,7 +117,7 @@ async function handleIntelligentPaste(clipboardText, formFields, imageBase64 = n
 
         const messages = [{
             role: "system",
-            content: "You are a form-filling assistant. Your task is to analyze clipboard content and map it to form fields. Return only a valid JSON object where keys are field IDs/names and values are the extracted content."
+            content: "You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only."
         }];
 
         // Add content message based on what we have
@@ -115,27 +131,20 @@ async function handleIntelligentPaste(clipboardText, formFields, imageBase64 = n
                 content: [
                     {
                         type: "text",
-                        text: `Analyze this image and extract ALL information, then return:
-1. Mapped fields: Information that matches the available form fields
-2. Additional data: Any other information found that doesn't map to available fields
+                        text: `Extract information from this image and respond with ONLY a raw JSON object in this exact format:
+{
+    "mappings": {
+        // Use ONLY these field IDs: ${availableFields.join(', ')}
+    },
+    "unmappedData": {
+        // Include any other information found
+    }
+}
 
 Available form fields:
 ${JSON.stringify(formFields, null, 2)}
 
-Return a JSON object with two sections:
-{
-    "mappings": {
-        // Use ONLY these field IDs: ${availableFields.join(', ')}
-        "${availableFields[0] || 'example'}": "extracted value"
-    },
-    "unmappedData": {
-        // Include ANY other information found, with descriptive keys
-        "description": "value",
-        "amount": "value",
-        "date": "value"
-        // etc...
-    }
-}`
+Remember: Return ONLY the JSON object, no markdown, no code blocks, no explanations.`
                     },
                     {
                         type: "image_url",
@@ -182,7 +191,8 @@ Return a JSON object with two sections:
             model: "gpt-4-1106-vision-preview",
             messages: messages,
             max_tokens: 1000,
-            temperature: 0.3
+            temperature: 0.0,
+            seed: 123
         };
 
         debugLog('=== OpenAI Request ===');
@@ -192,14 +202,32 @@ Return a JSON object with two sections:
             'Content-Type': 'application/json',
             'Authorization': 'Bearer sk-....' + OPENAI_API_KEY.slice(-4)
         });
-        debugLog('Request Body:', {
-            ...requestBody,
+
+        debugLog('System Prompt:', messages[0].content);
+
+        if (messages[1]) {
+            if (Array.isArray(messages[1].content)) {
+                debugLog('User Prompt Text:', messages[1].content.find(c => c.type === 'text')?.text);
+                debugLog('User Prompt Includes Image:', messages[1].content.some(c => c.type === 'image_url'));
+            } else {
+                debugLog('User Prompt:', messages[1].content);
+            }
+        }
+
+        debugLog('Full Request:', {
+            model: requestBody.model,
             messages: messages.map(m => ({
-                ...m,
-                content: m.content.map ? m.content.map(c => 
-                    c.type === 'image_url' ? { ...c, image_url: { url: 'data:image/png;base64,...' } } : c
-                ) : m.content
-            }))
+                role: m.role,
+                content: Array.isArray(m.content) 
+                    ? m.content.map(c => 
+                        c.type === 'image_url' 
+                            ? { ...c, image_url: { url: '[BASE64_IMAGE_DATA]' } }
+                            : c
+                    )
+                    : m.content
+            })),
+            max_tokens: requestBody.max_tokens,
+            temperature: requestBody.temperature
         });
 
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
