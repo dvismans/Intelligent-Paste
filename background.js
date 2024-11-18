@@ -76,20 +76,20 @@ chrome.storage.sync.get(['openaiApiKey'], (result) => {
 	OPENAI_API_KEY = result.openaiApiKey;
 });
 
-// Update the commands listener in background.js
+// Add at the top of background.js, right after the variable declarations
 chrome.commands.onCommand.addListener(async (command) => {
 	debugLog('Command received:', command);
-	if (command === 'intelligent-paste') {
+	if (command === 'run-intelligent-paste') {
 		// Get the active tab
 		const [tab] = await chrome.tabs.query({
 			active: true,
 			currentWindow: true,
 		});
 		if (tab) {
-			debugLog('Sending intelligent-paste command to tab:', tab.id);
+			debugLog('Sending command to tab:', tab.id);
 			chrome.tabs
 				.sendMessage(tab.id, {
-					action: 'intelligent-paste',
+					action: 'run-intelligent-paste',
 				})
 				.catch((error) => {
 					debugLog('Error sending command to tab:', error);
@@ -105,43 +105,31 @@ async function handleIntelligentPaste(
 ) {
 	const startTime = Date.now();
 	debugLog('=== Starting Intelligent Paste Request ===');
+	debugLog('Processing clipboard text:', clipboardText);
+	debugLog('Form fields:', formFields);
+	debugLog('Image included:', !!imageBase64);
 
 	try {
-		// Check for API key first
 		if (!OPENAI_API_KEY) {
 			const result = await chrome.storage.sync.get(['openaiApiKey']);
 			OPENAI_API_KEY = result.openaiApiKey;
 		}
 
 		if (!OPENAI_API_KEY) {
-			debugLog('No API key found');
+			debugLog('API key not found');
 			throw new Error(
-				'Please set your OpenAI API key in the extension settings (click the extension icon)'
+				'OpenAI API key not set. Please set your API key in the extension options.'
 			);
 		}
-
-		// Basic validation for OpenAI API key format
-		if (!OPENAI_API_KEY.startsWith('sk-') || OPENAI_API_KEY.length < 20) {
-			debugLog('Invalid API key format');
-			throw new Error(
-				'Invalid API key format. Please check your API key in the extension settings'
-			);
-		}
-
-		debugLog('Processing clipboard text:', clipboardText);
-		debugLog('Form fields:', formFields);
-		debugLog('Image included:', !!imageBase64);
 
 		if (!formFields || formFields.length === 0) {
 			debugLog('No form fields provided');
-			throw new Error('No form fields found on this page');
+			throw new Error('No form fields to fill');
 		}
 
 		if (!imageBase64 && !clipboardText) {
 			debugLog('No content to process');
-			throw new Error(
-				'No content found in clipboard. Please copy some text or an image first'
-			);
+			throw new Error('No content to process');
 		}
 
 		const messages = [

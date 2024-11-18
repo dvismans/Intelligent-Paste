@@ -415,7 +415,7 @@ function createFloatingClipboardWindow(
 	header.style.cssText = commonStyles.floatingHeader;
 
 	const title = document.createElement('div');
-	title.textContent = 'Intelligent Paste Clipboard';
+	title.textContent = 'Clipboard Content';
 	title.style.fontWeight = 'bold';
 
 	const closeButton = document.createElement('button');
@@ -442,8 +442,7 @@ function createFloatingClipboardWindow(
 		// Show unmapped data first
 		if (
 			extractedInfo.unmappedData &&
-			typeof extractedInfo.unmappedData === 'object' &&
-			Object.keys(extractedInfo.unmappedData).length > 0
+			typeof extractedInfo.unmappedData === 'object'
 		) {
 			const unmappedTitle = document.createElement('div');
 			unmappedTitle.textContent = 'Additional Information';
@@ -837,29 +836,6 @@ function createFloatingClipboardWindow(
 	};
 }
 
-// Add this function at the top of content.js
-async function checkApiKey() {
-	const result = await chrome.storage.sync.get(['openaiApiKey']);
-	if (!result.openaiApiKey) {
-		showNotification(
-			'Please set your OpenAI API key in the extension settings (click the extension icon)',
-			'error'
-		);
-		return false;
-	}
-	if (
-		!result.openaiApiKey.startsWith('sk-') ||
-		result.openaiApiKey.length < 20
-	) {
-		showNotification(
-			'Invalid API key format. Please check your API key in the extension settings',
-			'error'
-		);
-		return false;
-	}
-	return true;
-}
-
 // Update the handlePaste function
 async function handlePaste(e) {
 	// Prevent recursive paste handling
@@ -871,12 +847,6 @@ async function handlePaste(e) {
 	// If floating window is open, let the default paste behavior happen
 	if (currentFloatingWindow) {
 		debugLog('Floating window is open, allowing normal paste');
-		return;
-	}
-
-	// Check for API key first
-	const hasValidKey = await checkApiKey();
-	if (!hasValidKey) {
 		return;
 	}
 
@@ -893,6 +863,14 @@ async function handlePaste(e) {
 			return;
 		}
 
+		// Create temporary element for paste
+		const tempElem = document.createElement('div');
+		tempElem.contentEditable = true;
+		tempElem.style.position = 'fixed';
+		tempElem.style.left = '-9999px';
+		document.body.appendChild(tempElem);
+		tempElem.focus();
+
 		// Get clipboard data
 		let clipboardText = '';
 		let imageBase64 = null;
@@ -903,7 +881,7 @@ async function handlePaste(e) {
 				debugLog('Checking clipboardData...');
 				debugLog('Available types:', Array.from(e.clipboardData.types || []));
 
-				clipboardText = e.clipboardData.getData('text/plain') || '';
+				clipboardText = e.clipboardData.getData('text/plain');
 				debugLog('Got text from clipboardData:', clipboardText);
 
 				// Check for images
@@ -911,7 +889,7 @@ async function handlePaste(e) {
 					debugLog('Checking clipboard items:', e.clipboardData.items.length);
 					for (const item of e.clipboardData.items) {
 						debugLog('Processing item type:', item.type);
-						if (item.type && item.type.startsWith('image/')) {
+						if (item.type.indexOf('image') !== -1) {
 							debugLog('Found image item');
 							const blob = item.getAsFile();
 							if (blob) {
@@ -933,16 +911,35 @@ async function handlePaste(e) {
 					}
 				}
 			}
-		} catch (error) {
-			debugLog('Error processing clipboard data:', error);
-			// Continue with empty clipboard data
+
+			// If no content found, try pasting into temp element
+			if (!clipboardText && !imageBase64) {
+				debugLog(
+					'No content found in clipboardData, trying paste into temp element'
+				);
+				document.execCommand('paste');
+				clipboardText = tempElem.innerText;
+				debugLog('Got text from temp element:', clipboardText);
+
+				const images = tempElem.getElementsByTagName('img');
+				if (images.length > 0) {
+					debugLog('Found images in temp element:', images.length);
+					const imgSrc = images[0].src;
+					if (imgSrc.startsWith('data:image')) {
+						imageBase64 = imgSrc.split(',')[1];
+						debugLog('Got image from temp element');
+					}
+				}
+			}
+		} finally {
+			tempElem.remove();
 		}
 
 		debugLog('Final clipboard content:', {
-			hasText: Boolean(clipboardText),
-			hasImage: Boolean(imageBase64),
-			textLength: clipboardText?.length || 0,
-			imageSize: imageBase64?.length || 0,
+			hasText: !!clipboardText,
+			hasImage: !!imageBase64,
+			textLength: clipboardText?.length,
+			imageSize: imageBase64?.length,
 		});
 
 		if (!clipboardText && !imageBase64) {
@@ -1539,59 +1536,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Update the message listener in content.js
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	if (request.action === 'run-intelligent-paste') {
-		// Check for API key first
-		checkApiKey().then((hasValidKey) => {
-			if (hasValidKey) {
-				// Create a synthetic paste event
-				const syntheticEvent = {
-					preventDefault: () => {},
-					clipboardData: null, // We'll get this from the clipboard API
+		// Create a synthetic paste event
+		const syntheticEvent = {
+			preventDefault: () => {},
+			clipboardData: null, // We'll get this from the clipboard API
+		};
+
+		// Read from clipboard using Clipboard API
+		navigator.clipboard
+			.read()
+			.then(async (clipboardItems) => {
+				let clipboardText = '';
+				let imageBase64 = null;
+
+				for (const item of clipboardItems) {
+					// Handle text
+					if (item.types.includes('text/plain')) {
+						const blob = await item.getType('text/plain');
+						clipboardText = await blob.text();
+					}
+					// Handle image
+					if (item.types.some((type) => type.startsWith('image/'))) {
+						const imageType = item.types.find((type) =>
+							type.startsWith('image/')
+						);
+						if (imageType) {
+							const blob = await item.getType(imageType);
+							imageBase64 = await new Promise((resolve) => {
+								const reader = new FileReader();
+								reader.onload = () => resolve(reader.result.split(',')[1]);
+								reader.readAsDataURL(blob);
+							});
+						}
+					}
+				}
+
+				// Update the synthetic event with clipboard data
+				syntheticEvent.clipboardData = {
+					getData: (type) => (type === 'text/plain' ? clipboardText : ''),
+					items: clipboardItems,
 				};
 
-				// Read from clipboard using Clipboard API
-				navigator.clipboard
-					.read()
-					.then(async (clipboardItems) => {
-						let clipboardText = '';
-						let imageBase64 = null;
-
-						for (const item of clipboardItems) {
-							// Handle text
-							if (item.types.includes('text/plain')) {
-								const blob = await item.getType('text/plain');
-								clipboardText = await blob.text();
-							}
-							// Handle image
-							if (item.types.some((type) => type.startsWith('image/'))) {
-								const imageType = item.types.find((type) =>
-									type.startsWith('image/')
-								);
-								if (imageType) {
-									const blob = await item.getType(imageType);
-									imageBase64 = await new Promise((resolve) => {
-										const reader = new FileReader();
-										reader.onload = () => resolve(reader.result.split(',')[1]);
-										reader.readAsDataURL(blob);
-									});
-								}
-							}
-						}
-
-						// Update the synthetic event with clipboard data
-						syntheticEvent.clipboardData = {
-							getData: (type) => (type === 'text/plain' ? clipboardText : ''),
-							items: clipboardItems,
-						};
-
-						// Handle the paste with our existing function
-						handlePaste(syntheticEvent);
-					})
-					.catch((error) => {
-						debugLog('Error reading clipboard:', error);
-						showNotification('Failed to read clipboard content', 'error');
-					});
-			}
-		});
+				// Handle the paste with our existing function
+				handlePaste(syntheticEvent);
+			})
+			.catch((error) => {
+				debugLog('Error reading clipboard:', error);
+				showNotification('Failed to read clipboard content', 'error');
+			});
 	}
 });
 

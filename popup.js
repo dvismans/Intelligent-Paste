@@ -31,12 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
 			return;
 		}
 
-		// Basic validation for OpenAI API key format
-		if (!apiKey.startsWith('sk-') || apiKey.length < 20) {
-			showStatus('Invalid API key format. It should start with "sk-"', 'error');
-			return;
-		}
-
 		chrome.storage.sync.set({ openaiApiKey: apiKey }, () => {
 			showStatus('API key saved successfully!', 'success');
 			// Notify background script of API key change
