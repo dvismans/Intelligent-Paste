@@ -341,3 +341,70 @@ Return a JSON object with two sections:
 		throw error;
 	}
 }
+
+// Add context menu creation
+chrome.runtime.onInstalled.addListener(() => {
+	chrome.contextMenus.create({
+		id: 'openSettings',
+		title: 'Settings',
+		contexts: ['action'],
+	});
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+	if (info.menuItemId === 'openSettings') {
+		chrome.runtime.openOptionsPage();
+	}
+});
+
+// Handle extension icon click
+chrome.action.onClicked.addListener(async (tab) => {
+	try {
+		// Check if we have an API key first
+		const result = await chrome.storage.sync.get(['openaiApiKey']);
+		if (!result.openaiApiKey) {
+			// Only open options page if no API key is set
+			chrome.runtime.openOptionsPage();
+			return;
+		}
+
+		// Check if we can access the tab's URL
+		if (
+			tab.url.startsWith('chrome://') ||
+			tab.url.startsWith('chrome-extension://')
+		) {
+			showNotification(
+				'Intelligent Paste cannot be used on Chrome system pages'
+			);
+			return;
+		}
+
+		// Focus the tab first
+		await chrome.windows.update(tab.windowId, { focused: true });
+		await chrome.tabs.update(tab.id, { active: true });
+
+		// Execute the paste action directly in the page context
+		await chrome.scripting.executeScript({
+			target: { tabId: tab.id },
+			files: ['content.js'],
+		});
+
+		// Wait a moment for the content script to initialize
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		// Send message to trigger paste
+		await chrome.tabs.sendMessage(tab.id, {
+			action: 'intelligent-paste',
+		});
+	} catch (error) {
+		console.error('Error handling action click:', error);
+		if (error.message.includes('cannot access a chrome://')) {
+			showNotification(
+				'Intelligent Paste cannot be used on Chrome system pages'
+			);
+		} else if (error.message.includes('API key')) {
+			chrome.runtime.openOptionsPage();
+		}
+	}
+});

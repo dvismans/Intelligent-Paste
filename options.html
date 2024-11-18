@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Intelligent Paste Settings</title>
+		<style>
+			body {
+				width: 100%;
+				max-width: 800px;
+				margin: 20px auto;
+				padding: 20px;
+				font-family: Arial, sans-serif;
+			}
+			.container {
+				background: #f8f9fa;
+				border: 1px solid #ddd;
+				border-radius: 8px;
+				padding: 20px;
+			}
+			h1 {
+				color: #333;
+				margin-bottom: 20px;
+			}
+			.form-group {
+				margin-bottom: 20px;
+			}
+			label {
+				display: block;
+				margin-bottom: 8px;
+				font-weight: bold;
+				color: #333;
+			}
+			input[type='password'] {
+				width: 100%;
+				padding: 12px;
+				border: 1px solid #ddd;
+				border-radius: 4px;
+				font-size: 14px;
+				font-family: monospace;
+			}
+			input[type='password']:focus {
+				outline: none;
+				border-color: #2196f3;
+				box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+			}
+			button {
+				background: #2196f3;
+				color: white;
+				border: none;
+				padding: 12px 24px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 14px;
+				transition: background 0.2s;
+			}
+			button:hover {
+				background: #1976d2;
+			}
+			.status {
+				margin-top: 16px;
+				padding: 12px;
+				border-radius: 4px;
+				display: none;
+			}
+			.success {
+				background: #e8f5e9;
+				color: #2e7d32;
+				border: 1px solid #a5d6a7;
+			}
+			.error {
+				background: #ffebee;
+				color: #c62828;
+				border: 1px solid #ef9a9a;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>Intelligent Paste Settings</h1>
+			<div class="form-group">
+				<label for="apiKey">OpenAI API Key</label>
+				<input
+					type="password"
+					id="apiKey"
+					placeholder="sk-..."
+					spellcheck="false"
+				/>
+			</div>
+			<button id="saveSettings">Save Settings</button>
+			<div
+				id="status"
+				class="status"
+			></div>
+		</div>
+		<script src="options.js"></script>
+	</body>
+</html>

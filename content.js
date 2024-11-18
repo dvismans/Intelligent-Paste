@@ -114,11 +114,86 @@ function debugLog(message, data = null) {
 	}
 }
 
-// Add this at the top of the file
+// Global variables at the top
 let isProcessingPaste = false;
-
-// Add this at the top of the file with other global variables
 let currentFloatingWindow = null;
+let lastFocusedElement = null;
+
+// Update the message listener
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+	if (request.action === 'intelligent-paste') {
+		// Get all form fields first
+		const formFields = getAllFormFields();
+		if (!formFields || formFields.length === 0) {
+			showNotification('No form fields found on page', 'error');
+			return;
+		}
+
+		// Create synthetic paste event
+		const syntheticEvent = {
+			preventDefault: () => {},
+			clipboardData: {
+				getData: () => '',
+				items: [],
+			},
+		};
+
+		// Try to read clipboard content
+		Promise.all([
+			navigator.clipboard.readText().catch(() => ''),
+			navigator.clipboard.read().catch(() => []),
+		])
+			.then(async ([clipboardText, items]) => {
+				let imageBase64 = null;
+
+				// Try to extract image from clipboard items
+				if (items && items.length > 0) {
+					for (const item of items) {
+						try {
+							if (item.types && Array.isArray(item.types)) {
+								for (const type of item.types) {
+									if (type && type.startsWith('image/')) {
+										const blob = await item.getType(type);
+										imageBase64 = await new Promise((resolve) => {
+											const reader = new FileReader();
+											reader.onload = () =>
+												resolve(reader.result.split(',')[1]);
+											reader.readAsDataURL(blob);
+										});
+										break;
+									}
+								}
+							}
+						} catch (error) {
+							console.error('Error processing clipboard item:', error);
+						}
+					}
+				}
+
+				// Update synthetic event with clipboard content
+				syntheticEvent.clipboardData.getData = (type) =>
+					type === 'text/plain' ? clipboardText : '';
+				syntheticEvent.clipboardData.items = items;
+
+				// Handle the paste
+				if (clipboardText || imageBase64) {
+					handlePaste(syntheticEvent);
+				} else {
+					showNotification(
+						'No content found in clipboard. Please copy some text or image first.',
+						'error'
+					);
+				}
+			})
+			.catch((error) => {
+				console.error('Error reading clipboard:', error);
+				showNotification(
+					'Failed to read clipboard content. Please try copying again.',
+					'error'
+				);
+			});
+	}
+});
 
 // Update the common styles object
 const commonStyles = {
@@ -855,123 +930,10 @@ async function handlePaste(e) {
 		debugLog('Paste event captured!');
 		isProcessingPaste = true;
 
-		// First check if intelligent paste is enabled
-		const result = await chrome.storage.sync.get(['intelligentPasteEnabled']);
-		if (result.intelligentPasteEnabled === false) {
-			debugLog('Intelligent paste is disabled');
-			isProcessingPaste = false;
-			return;
-		}
-
-		// Create temporary element for paste
-		const tempElem = document.createElement('div');
-		tempElem.contentEditable = true;
-		tempElem.style.position = 'fixed';
-		tempElem.style.left = '-9999px';
-		document.body.appendChild(tempElem);
-		tempElem.focus();
-
-		// Get clipboard data
-		let clipboardText = '';
-		let imageBase64 = null;
-
-		try {
-			// Try to get text directly from clipboardData
-			if (e.clipboardData) {
-				debugLog('Checking clipboardData...');
-				debugLog('Available types:', Array.from(e.clipboardData.types || []));
-
-				clipboardText = e.clipboardData.getData('text/plain');
-				debugLog('Got text from clipboardData:', clipboardText);
-
-				// Check for images
-				if (e.clipboardData.items) {
-					debugLog('Checking clipboard items:', e.clipboardData.items.length);
-					for (const item of e.clipboardData.items) {
-						debugLog('Processing item type:', item.type);
-						if (item.type.indexOf('image') !== -1) {
-							debugLog('Found image item');
-							const blob = item.getAsFile();
-							if (blob) {
-								debugLog('Got image blob');
-								imageBase64 = await new Promise((resolve, reject) => {
-									const reader = new FileReader();
-									reader.onload = () => {
-										debugLog('Successfully read image');
-										resolve(reader.result.split(',')[1]);
-									};
-									reader.onerror = (error) => {
-										debugLog('Error reading image:', error);
-										reject(error);
-									};
-									reader.readAsDataURL(blob);
-								});
-							}
-						}
-					}
-				}
-			}
-
-			// If no content found, try pasting into temp element
-			if (!clipboardText && !imageBase64) {
-				debugLog(
-					'No content found in clipboardData, trying paste into temp element'
-				);
-				document.execCommand('paste');
-				clipboardText = tempElem.innerText;
-				debugLog('Got text from temp element:', clipboardText);
-
-				const images = tempElem.getElementsByTagName('img');
-				if (images.length > 0) {
-					debugLog('Found images in temp element:', images.length);
-					const imgSrc = images[0].src;
-					if (imgSrc.startsWith('data:image')) {
-						imageBase64 = imgSrc.split(',')[1];
-						debugLog('Got image from temp element');
-					}
-				}
-			}
-		} finally {
-			tempElem.remove();
-		}
-
-		debugLog('Final clipboard content:', {
-			hasText: !!clipboardText,
-			hasImage: !!imageBase64,
-			textLength: clipboardText?.length,
-			imageSize: imageBase64?.length,
-		});
-
-		if (!clipboardText && !imageBase64) {
-			debugLog('No content found in clipboard data');
-			showNotification('No content found in clipboard', 'error');
-			isProcessingPaste = false;
-			return;
-		}
-
-		// Show confirmation dialog
-		if (
-			!confirm(
-				'Would you like to use Intelligent Paste to automatically fill this form?'
-			)
-		) {
-			debugLog('User cancelled intelligent paste');
-			isProcessingPaste = false;
-			return;
-		}
-
-		// Prevent default paste behavior after confirmation
-		e.preventDefault();
-
-		// Create floating window with clipboard content
-		const floatingWindow = createFloatingClipboardWindow(
-			clipboardText,
-			imageBase64
-		);
-
-		// Create step tracker and show progress
+		// Create step tracker with progress bar
 		stepTracker = createStepTracker();
 		stepTracker.showProgress(true);
+		stepTracker.updateStep('Processing clipboard content...');
 		let progress = 0;
 
 		// Start progress animation
@@ -982,97 +944,110 @@ async function handlePaste(e) {
 			}
 		}, 100);
 
+		// Get all form fields first
+		const formFields = getAllFormFields();
+		if (!formFields || formFields.length === 0) {
+			clearInterval(progressInterval);
+			showNotification('No form fields found on page', 'error');
+			stepTracker.remove();
+			isProcessingPaste = false;
+			return;
+		}
+
+		// Get clipboard data
+		let clipboardText = '';
+		let imageBase64 = null;
+
 		try {
-			// Get all form elements from the page
-			const formFields = getAllFormFields();
-			debugLog('Form fields captured:', formFields);
+			// Try to read clipboard content
+			const [text, items] = await Promise.all([
+				navigator.clipboard.readText().catch(() => ''),
+				navigator.clipboard.read().catch(() => []),
+			]);
 
-			if (formFields.length === 0) {
-				clearInterval(progressInterval);
-				debugLog('No form fields found');
-				showNotification('No form fields found on page', 'error');
-				stepTracker.remove();
-				isProcessingPaste = false;
-				return;
-			}
+			clipboardText = text;
+			debugLog('Got clipboard text:', clipboardText);
 
-			// Get page HTML
-			const pageHtml = document.documentElement.outerHTML;
-
-			// Send message to background script
-			stepTracker.updateStep('Processing with AI...');
-			const response = await new Promise((resolve, reject) => {
-				chrome.runtime.sendMessage(
-					{
-						action: 'intelligentPaste',
-						clipboardText,
-						imageBase64,
-						formFields,
-					},
-					(result) => {
-						if (chrome.runtime.lastError) {
-							reject(chrome.runtime.lastError);
-						} else {
-							resolve(result);
+			// Try to extract image from clipboard items
+			if (items && items.length > 0) {
+				debugLog('Checking clipboard items:', items.length);
+				for (const item of items) {
+					if (item.types) {
+						debugLog('Item types:', item.types);
+						for (const type of item.types) {
+							if (type && type.startsWith && type.startsWith('image/')) {
+								try {
+									const blob = await item.getType(type);
+									imageBase64 = await new Promise((resolve) => {
+										const reader = new FileReader();
+										reader.onload = () => resolve(reader.result.split(',')[1]);
+										reader.readAsDataURL(blob);
+									});
+									debugLog('Successfully extracted image');
+									break;
+								} catch (error) {
+									debugLog('Error extracting image:', error);
+								}
+							}
 						}
 					}
-				);
-			});
-
-			// Stop progress animation
-			clearInterval(progressInterval);
-
-			if (response?.mappings) {
-				stepTracker.updateProgress(95);
-				stepTracker.updateStep('Filling form fields...');
-				fillFormFields(response.mappings);
-				stepTracker.updateProgress(100);
-				stepTracker.updateStep('Complete!');
-
-				// Create new floating window with results
-				const extractedWindow = createFloatingClipboardWindow(
-					clipboardText,
-					imageBase64,
-					{
-						mappings: response.mappings,
-						unmappedData: response.unmappedData,
-						cost: response.cost,
-					}
-				);
-
-				// Remove the progress tracker
-				setTimeout(() => {
-					stepTracker.remove();
-					showNotification('Form filled successfully!', 'success');
-				}, 1000);
-			} else {
-				throw new Error('No mappings received from AI');
+				}
 			}
 		} catch (error) {
-			debugLog('Error processing paste:', error);
-			if (stepTracker) {
-				stepTracker.updateStep('Error occurred');
-				setTimeout(() => stepTracker.remove(), 1000);
-			}
-			showNotification('Failed to process paste: ' + error.message, 'error');
-		} finally {
-			isProcessingPaste = false;
+			debugLog('Error accessing clipboard:', error);
 		}
+
+		if (!clipboardText && !imageBase64) {
+			debugLog('No content found in clipboard');
+			showNotification('No content found in clipboard', 'error');
+			isProcessingPaste = false;
+			return;
+		}
+
+		// Send to background script for processing
+		stepTracker.updateStep('Analyzing with AI...');
+		const response = await chrome.runtime.sendMessage({
+			action: 'intelligentPaste',
+			clipboardText,
+			formFields,
+			imageBase64,
+		});
+
+		if (response?.mappings) {
+			// Update progress to 100%
+			stepTracker.updateProgress(100);
+			stepTracker.updateStep('Processing complete!');
+
+			// Create floating window with results
+			createFloatingClipboardWindow(clipboardText, imageBase64, response);
+
+			// Fill form fields
+			fillFormFields(response.mappings);
+			showNotification('Form filled successfully!', 'success');
+		} else {
+			throw new Error('No mappings received from AI');
+		}
+
+		// Clear progress interval
+		clearInterval(progressInterval);
+
+		// Remove step tracker after a short delay
+		setTimeout(() => {
+			stepTracker.remove();
+		}, 1000);
 	} catch (error) {
-		debugLog('Critical error in paste handler:', error.message || error);
 		if (stepTracker) {
 			stepTracker.updateStep('Error occurred');
 			setTimeout(() => stepTracker.remove(), 1000);
 		}
-		showNotification('Extension error. Please refresh the page.', 'error');
-		isProcessingPaste = false;
-		// Don't remove the floating window on error
+		debugLog('Critical error in paste handler:', error.message || error);
+		showNotification(
+			'Error processing clipboard content. Please try again.',
+			'error'
+		);
 	} finally {
-		// Ensure flag is reset even if something unexpected happens
-		setTimeout(() => {
-			isProcessingPaste = false;
-			debugLog('Paste processing flag reset');
-		}, 1500); // Give enough time for notifications to show
+		isProcessingPaste = false;
+		debugLog('Paste processing flag reset');
 	}
 }
 
@@ -1586,9 +1561,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 			});
 	}
 });
-
-// Add at the top of the file
-let lastFocusedElement = null;
 
 // Add event listeners for focus tracking
 document.addEventListener('focusin', (e) => {
