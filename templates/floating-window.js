@@ -1,19 +1,27 @@
 import { styles } from './styles.js';
 
-export function createFloatingWindow({ title = 'Form Field Analysis', onClose = null } = {}) {
+export function createFloatingWindow({ title = 'Intelligent Paste', onClose = null } = {}) {
     const container = document.createElement('div');
     container.style.cssText = styles.floatingWindow;
 
     // Create header
     const header = document.createElement('div');
-    header.style.cssText = styles.floatingHeader;
+    header.style.cssText = styles.floatingHeader + `
+        position: sticky;
+        top: 0;
+        background: #f8f9fa;
+        z-index: 1;
+    `;
     
     const titleElement = document.createElement('div');
-    titleElement.textContent = title;
+    titleElement.textContent = 'Intelligent Paste';  // Always use this title
     titleElement.style.fontWeight = 'bold';
     
     const closeButton = document.createElement('button');
-    closeButton.style.cssText = styles.closeButton;
+    closeButton.style.cssText = styles.closeButton + `
+        position: sticky;
+        right: 12px;
+    `;
     closeButton.innerHTML = '×';
     closeButton.onclick = () => {
         container.remove();
@@ -40,6 +48,7 @@ export function createFloatingWindow({ title = 'Form Field Analysis', onClose = 
     header.addEventListener('mousedown', dragStart);
 
     function dragStart(e) {
+        if (e.target === closeButton) return; // Don't start drag if clicking close button
         initialX = e.clientX - container.offsetLeft;
         initialY = e.clientY - container.offsetTop;
         isDragging = true;

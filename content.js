@@ -475,16 +475,24 @@ function createFloatingClipboardWindow(
 	const container = document.createElement('div');
 	container.style.cssText = commonStyles.floatingWindow;
 
-	// Create header
+	// Create header with sticky positioning
 	const header = document.createElement('div');
-	header.style.cssText = commonStyles.floatingHeader;
+	header.style.cssText = commonStyles.floatingHeader + `
+        position: sticky;
+        top: 0;
+        background: #f8f9fa;
+        z-index: 1;
+    `;
 
 	const title = document.createElement('div');
-	title.textContent = 'Clipboard Content';
+	title.textContent = 'Intelligent Paste';
 	title.style.fontWeight = 'bold';
 
 	const closeButton = document.createElement('button');
-	closeButton.style.cssText = commonStyles.closeButton;
+	closeButton.style.cssText = commonStyles.closeButton + `
+        position: sticky;
+        right: 12px;
+    `;
 	closeButton.innerHTML = '×';
 	closeButton.onclick = () => {
 		container.remove();
