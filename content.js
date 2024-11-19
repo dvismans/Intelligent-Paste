@@ -901,7 +901,7 @@ function createFloatingClipboardWindow(
 	};
 }
 
-// Update the handlePaste function
+// Update the handlePaste function with more granular status updates
 async function handlePaste(e) {
 	// Prevent recursive paste handling
 	if (isProcessingPaste) {
@@ -923,28 +923,24 @@ async function handlePaste(e) {
 		// Create step tracker with progress bar
 		stepTracker = createStepTracker();
 		stepTracker.showProgress(true);
-		stepTracker.updateStep('Processing clipboard content...');
+		stepTracker.updateStep('Detecting form fields...');
 		let progress = 0;
-
-		// Start progress animation
-		const progressInterval = setInterval(() => {
-			progress += 2;
-			if (progress <= 90) {
-				stepTracker.updateProgress(progress);
-			}
-		}, 100);
 
 		// Get all form fields first
 		const formFields = getAllFormFields();
 		if (!formFields || formFields.length === 0) {
-			clearInterval(progressInterval);
 			showNotification('No form fields found on page', 'error');
 			stepTracker.remove();
 			isProcessingPaste = false;
 			return;
 		}
 
+		stepTracker.updateStep(`Found ${formFields.length} form fields`);
+		progress = 10;
+		stepTracker.updateProgress(progress);
+
 		// Get clipboard data
+		stepTracker.updateStep('Reading clipboard content...');
 		let clipboardText = '';
 		let imageBase64 = null;
 
@@ -952,36 +948,38 @@ async function handlePaste(e) {
 			// Try to read clipboard content
 			const [text, items] = await Promise.all([
 				navigator.clipboard.readText().catch(() => ''),
-				navigator.clipboard.read().catch(() => []),
+				navigator.clipboard.read().catch(() => [])
 			]);
 
 			clipboardText = text;
-			debugLog('Got clipboard text:', clipboardText);
+			if (clipboardText) {
+				stepTracker.updateStep('Found text in clipboard');
+			}
+			progress = 20;
+			stepTracker.updateProgress(progress);
 
 			// Try to extract image from clipboard items
 			if (items && items.length > 0) {
-				debugLog('Checking clipboard items:', items.length);
+				stepTracker.updateStep('Checking for images in clipboard...');
 				for (const item of items) {
 					if (item.types) {
-						debugLog('Item types:', item.types);
 						for (const type of item.types) {
-							if (type && type.startsWith && type.startsWith('image/')) {
-								try {
-									const blob = await item.getType(type);
-									imageBase64 = await new Promise((resolve) => {
-										const reader = new FileReader();
-										reader.onload = () => resolve(reader.result.split(',')[1]);
-										reader.readAsDataURL(blob);
-									});
-									debugLog('Successfully extracted image');
-									break;
-								} catch (error) {
-									debugLog('Error extracting image:', error);
-								}
+							if (type && type.startsWith('image/')) {
+								stepTracker.updateStep('Processing image from clipboard...');
+								const blob = await item.getType(type);
+								imageBase64 = await new Promise((resolve) => {
+									const reader = new FileReader();
+									reader.onload = () => resolve(reader.result.split(',')[1]);
+									reader.readAsDataURL(blob);
+								});
+								stepTracker.updateStep('Successfully extracted image');
+								break;
 							}
 						}
 					}
 				}
+				progress = 30;
+				stepTracker.updateProgress(progress);
 			}
 		} catch (error) {
 			debugLog('Error accessing clipboard:', error);
@@ -994,32 +992,45 @@ async function handlePaste(e) {
 			return;
 		}
 
-		// Send to background script for processing
-		stepTracker.updateStep('Analyzing with AI...');
+		// Send to OpenAI for processing
+		stepTracker.updateStep('Preparing content for AI analysis...');
+		progress = 40;
+		stepTracker.updateProgress(progress);
+
+		stepTracker.updateStep('Sending to OpenAI for analysis...');
 		const response = await chrome.runtime.sendMessage({
 			action: 'intelligentPaste',
 			clipboardText,
 			formFields,
-			imageBase64,
+			imageBase64
 		});
 
 		if (response?.mappings) {
-			// Update progress to 100%
-			stepTracker.updateProgress(100);
-			stepTracker.updateStep('Processing complete!');
+			const mappedFieldCount = Object.keys(response.mappings).length;
+			const unmappedDataCount = Object.keys(response.unmappedData || {}).length;
+			
+			stepTracker.updateStep(`AI identified ${mappedFieldCount} field matches and ${unmappedDataCount} additional data points`);
+			progress = 80;
+			stepTracker.updateProgress(progress);
 
-			// Create floating window with results
-			createFloatingClipboardWindow(clipboardText, imageBase64, response);
+			stepTracker.updateStep('Filling form fields...');
+			progress = 90;
+			stepTracker.updateProgress(progress);
 
 			// Fill form fields
 			fillFormFields(response.mappings);
+
+			// Update progress to 100%
+			progress = 100;
+			stepTracker.updateProgress(progress);
+			stepTracker.updateStep('Processing complete!');
+
+			// Create floating window with results
+				createFloatingClipboardWindow(clipboardText, imageBase64, response);
 			showNotification('Form filled successfully!', 'success');
 		} else {
 			throw new Error('No mappings received from AI');
 		}
-
-		// Clear progress interval
-		clearInterval(progressInterval);
 
 		// Remove step tracker after a short delay
 		setTimeout(() => {
@@ -1027,14 +1038,11 @@ async function handlePaste(e) {
 		}, 1000);
 	} catch (error) {
 		if (stepTracker) {
-			stepTracker.updateStep('Error occurred');
+			stepTracker.updateStep(`Error: ${error.message}`);
 			setTimeout(() => stepTracker.remove(), 1000);
 		}
 		debugLog('Critical error in paste handler:', error.message || error);
-		showNotification(
-			'Error processing clipboard content. Please try again.',
-			'error'
-		);
+		showNotification('Error processing clipboard content. Please try again.', 'error');
 	} finally {
 		isProcessingPaste = false;
 		debugLog('Paste processing flag reset');
