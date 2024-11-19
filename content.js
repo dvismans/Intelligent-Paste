@@ -512,284 +512,186 @@ function createFloatingClipboardWindow(
 		const extractedSection = document.createElement('div');
 		extractedSection.style.marginBottom = '16px';
 
-		// Show unmapped data first
-		if (
-			extractedInfo.unmappedData &&
-			typeof extractedInfo.unmappedData === 'object'
-		) {
-			const unmappedTitle = document.createElement('div');
-			unmappedTitle.textContent = 'Additional Information';
-			unmappedTitle.style.fontWeight = 'bold';
-			unmappedTitle.style.marginBottom = '8px';
-			extractedSection.appendChild(unmappedTitle);
+		// Combine and sort all data
+		const allData = [];
 
-			// Log the unmapped data object
-			debugLog('Rendering unmapped data:', extractedInfo.unmappedData);
-
-			// Iterate through unmapped data
-			for (const [key, value] of Object.entries(extractedInfo.unmappedData)) {
-				if (!value) continue; // Skip empty values
-
-				const item = document.createElement('div');
-				item.style.cssText = commonStyles.contentItem;
-
-				const valueText = document.createElement('div');
-				valueText.style.display = 'flex';
-				valueText.style.justifyContent = 'space-between';
-				valueText.style.alignItems = 'center';
-
-				const fieldLabel = document.createElement('span');
-				fieldLabel.style.color = '#666';
-				fieldLabel.textContent = `${key}:`;
-
-				const fieldValue = document.createElement('span');
-				fieldValue.style.marginLeft = '8px';
-				fieldValue.style.wordBreak = 'break-all';
-				fieldValue.textContent =
-					typeof value === 'object' ? JSON.stringify(value) : value;
-
-				valueText.appendChild(fieldLabel);
-				valueText.appendChild(fieldValue);
-				item.appendChild(valueText);
-
-				const copyIndicator = document.createElement('span');
-				copyIndicator.style.cssText = commonStyles.copyIndicator;
-				copyIndicator.textContent = 'Copied!';
-				item.appendChild(copyIndicator);
-
-				item.onclick = async () => {
-					try {
-						const textToCopy =
-							typeof value === 'object' ? JSON.stringify(value) : value;
-
-						// Get the currently focused element
-						const formElement = lastFocusedElement;
-						debugLog('Last focused element:', {
-							tagName: formElement?.tagName,
-							type: formElement?.type,
-							id: formElement?.id,
-							className: formElement?.className,
-						});
-
-						const isFormField =
-							formElement &&
-							(formElement.tagName === 'INPUT' ||
-								formElement.tagName === 'TEXTAREA' ||
-								formElement.tagName === 'SELECT' ||
-								formElement.isContentEditable ||
-								formElement.getAttribute('role') === 'textbox' ||
-								formElement.getAttribute('contenteditable') === 'true');
-
-						// Copy to clipboard
-						await navigator.clipboard.writeText(textToCopy);
-
-						// Update the indicator text based on action
-						copyIndicator.textContent = isFormField ? 'Inserted!' : 'Copied!';
-						copyIndicator.style.opacity = '1';
-						setTimeout(() => {
-							copyIndicator.style.opacity = '0';
-						}, 1000);
-
-						// If a form field was last focused, insert the value
-						if (isFormField && formElement) {
-							debugLog('Inserting into form field:', {
-								tagName: formElement.tagName,
-								type: formElement.type,
-								value: textToCopy,
-							});
-
-							if (formElement.tagName === 'SELECT') {
-								// For select elements, try to find matching option
-								const options = Array.from(formElement.options);
-								const matchingOption = options.find(
-									(opt) =>
-										opt.text.toLowerCase().includes(textToCopy.toLowerCase()) ||
-										opt.value.toLowerCase().includes(textToCopy.toLowerCase())
-								);
-								if (matchingOption) {
-									formElement.value = matchingOption.value;
-								}
-							} else if (
-								formElement.isContentEditable ||
-								formElement.getAttribute('contenteditable') === 'true'
-							) {
-								// For contenteditable elements
-								formElement.textContent = textToCopy;
-							} else {
-								// For other input types
-								formElement.value = textToCopy;
-							}
-
-							// Trigger change event
-							formElement.dispatchEvent(new Event('input', { bubbles: true }));
-							formElement.dispatchEvent(new Event('change', { bubbles: true }));
-
-							// Add visual feedback
-							const originalBackground = formElement.style.backgroundColor;
-							formElement.style.backgroundColor = '#e3f2fd';
-							setTimeout(() => {
-								formElement.style.backgroundColor = originalBackground;
-							}, 500);
-						}
-					} catch (error) {
-						console.error('Failed to copy/insert:', error);
-					}
-				};
-
-				item.onmouseover = () => {
-					item.style.backgroundColor = '#eee';
-				};
-
-				item.onmouseout = () => {
-					item.style.backgroundColor = '#f5f5f5';
-				};
-
-				extractedSection.appendChild(item);
-			}
-		}
-
-		// Show mapped fields that have values
+		// Add mapped fields
 		if (extractedInfo.mappings && typeof extractedInfo.mappings === 'object') {
-			const mappingsObj =
-				extractedInfo.mappings.mappings || extractedInfo.mappings;
-			const nonEmptyMappings = Object.entries(mappingsObj).filter(
-				([_, value]) => value
-			);
-
-			if (nonEmptyMappings.length > 0) {
-				const mappedTitle = document.createElement('div');
-				mappedTitle.textContent = 'Mapped Fields';
-				mappedTitle.style.fontWeight = 'bold';
-				mappedTitle.style.marginTop = '16px';
-				mappedTitle.style.marginBottom = '8px';
-				extractedSection.appendChild(mappedTitle);
-
-				// Iterate through non-empty mappings
-				for (const [fieldId, value] of nonEmptyMappings) {
-					const item = document.createElement('div');
-					item.style.cssText = commonStyles.contentItem;
-
-					const valueText = document.createElement('div');
-					valueText.style.display = 'flex';
-					valueText.style.justifyContent = 'space-between';
-					valueText.style.alignItems = 'center';
-
-					const fieldLabel = document.createElement('span');
-					fieldLabel.style.color = '#666';
-					fieldLabel.textContent = `${fieldId}:`;
-
-					const fieldValue = document.createElement('span');
-					fieldValue.style.marginLeft = '8px';
-					fieldValue.style.wordBreak = 'break-all';
-					fieldValue.textContent =
-						typeof value === 'object' ? JSON.stringify(value) : value;
-
-					valueText.appendChild(fieldLabel);
-					valueText.appendChild(fieldValue);
-					item.appendChild(valueText);
-
-					const copyIndicator = document.createElement('span');
-					copyIndicator.style.cssText = commonStyles.copyIndicator;
-					copyIndicator.textContent = 'Copied!';
-					item.appendChild(copyIndicator);
-
-					item.onclick = async () => {
-						try {
-							const textToCopy =
-								typeof value === 'object' ? JSON.stringify(value) : value;
-
-							// Get the currently focused element
-							const formElement = lastFocusedElement;
-							debugLog('Last focused element:', {
-								tagName: formElement?.tagName,
-								type: formElement?.type,
-								id: formElement?.id,
-								className: formElement?.className,
-							});
-
-							const isFormField =
-								formElement &&
-								(formElement.tagName === 'INPUT' ||
-									formElement.tagName === 'TEXTAREA' ||
-									formElement.tagName === 'SELECT' ||
-									formElement.isContentEditable ||
-									formElement.getAttribute('role') === 'textbox' ||
-									formElement.getAttribute('contenteditable') === 'true');
-
-							// Copy to clipboard
-							await navigator.clipboard.writeText(textToCopy);
-
-							// Update the indicator text based on action
-							copyIndicator.textContent = isFormField ? 'Inserted!' : 'Copied!';
-							copyIndicator.style.opacity = '1';
-							setTimeout(() => {
-								copyIndicator.style.opacity = '0';
-							}, 1000);
-
-							// If a form field was last focused, insert the value
-							if (isFormField && formElement) {
-								debugLog('Inserting into form field:', {
-									tagName: formElement.tagName,
-									type: formElement.type,
-									value: textToCopy,
-								});
-
-								if (formElement.tagName === 'SELECT') {
-									// For select elements, try to find matching option
-									const options = Array.from(formElement.options);
-									const matchingOption = options.find(
-										(opt) =>
-											opt.text
-												.toLowerCase()
-												.includes(textToCopy.toLowerCase()) ||
-											opt.value.toLowerCase().includes(textToCopy.toLowerCase())
-									);
-									if (matchingOption) {
-										formElement.value = matchingOption.value;
-									}
-								} else if (
-									formElement.isContentEditable ||
-									formElement.getAttribute('contenteditable') === 'true'
-								) {
-									// For contenteditable elements
-									formElement.textContent = textToCopy;
-								} else {
-									// For other input types
-									formElement.value = textToCopy;
-								}
-
-								// Trigger change event
-								formElement.dispatchEvent(
-									new Event('input', { bubbles: true })
-								);
-								formElement.dispatchEvent(
-									new Event('change', { bubbles: true })
-								);
-
-								// Add visual feedback
-								const originalBackground = formElement.style.backgroundColor;
-								formElement.style.backgroundColor = '#e3f2fd';
-								setTimeout(() => {
-									formElement.style.backgroundColor = originalBackground;
-								}, 500);
-							}
-						} catch (error) {
-							console.error('Failed to copy/insert:', error);
-						}
-					};
-
-					item.onmouseover = () => {
-						item.style.backgroundColor = '#eee';
-					};
-
-					item.onmouseout = () => {
-						item.style.backgroundColor = '#f5f5f5';
-					};
-
-					extractedSection.appendChild(item);
+			Object.entries(extractedInfo.mappings).forEach(([fieldId, data]) => {
+				if (data && data.value) {
+					allData.push({
+						key: fieldId,
+						value: data.value,
+						index: data.index || 90, // Default high priority for mapped fields
+						isMapped: true
+					});
 				}
-			}
+			});
 		}
+
+		// Add unmapped data
+		if (extractedInfo.unmappedData && typeof extractedInfo.unmappedData === 'object') {
+			Object.entries(extractedInfo.unmappedData).forEach(([key, data]) => {
+				if (data && data.value) {
+					allData.push({
+						key: key,
+						value: data.value,
+						index: data.index || 50, // Default medium priority for unmapped
+						isMapped: false
+					});
+				}
+			});
+		}
+
+		// Sort all data by index
+		allData.sort(sortByIndex);
+
+		// Create sections for the sorted data
+		allData.forEach(item => {
+			const itemContainer = document.createElement('div');
+			itemContainer.style.cssText = commonStyles.contentItem + `
+                cursor: pointer;
+                position: relative;
+                transition: background-color 0.2s;
+            `;
+
+			// Add relevance indicator
+			const relevanceIndicator = document.createElement('div');
+			relevanceIndicator.style.cssText = `
+				position: absolute;
+				top: 0;
+				 right: 0;
+				 padding: 4px 8px;
+				 font-size: 11px;
+				 color: ${item.index >= 90 ? '#2196F3' : 
+						 item.index >= 70 ? '#4CAF50' : 
+						 item.index >= 40 ? '#FF9800' : '#757575'};
+				 background: ${item.index >= 90 ? '#E3F2FD' : 
+						  item.index >= 70 ? '#E8F5E9' : 
+						  item.index >= 40 ? '#FFF3E0' : '#F5F5F5'};
+				 border-radius: 0 4px 0 4px;
+			`;
+			relevanceIndicator.textContent = `${item.index}%`;
+			itemContainer.appendChild(relevanceIndicator);
+
+			const valueText = document.createElement('div');
+			valueText.style.display = 'flex';
+			valueText.style.justifyContent = 'space-between';
+			valueText.style.alignItems = 'center';
+			valueText.style.paddingRight = '40px'; // Make room for relevance indicator
+
+			const fieldLabel = document.createElement('span');
+			fieldLabel.style.color = '#666';
+			fieldLabel.textContent = `${item.key}:`;
+
+			const fieldValue = document.createElement('span');
+			fieldValue.style.marginLeft = '8px';
+			fieldValue.style.wordBreak = 'break-all';
+			fieldValue.textContent = item.value;
+
+			valueText.appendChild(fieldLabel);
+			valueText.appendChild(fieldValue);
+			itemContainer.appendChild(valueText);
+
+			// Add copy indicator
+			const copyIndicator = document.createElement('span');
+			copyIndicator.style.cssText = `
+				position: absolute;
+				top: 4px;
+				right: 4px;
+				background: #4CAF50;
+				color: white;
+				padding: 2px 6px;
+				border-radius: 3px;
+				font-size: 11px;
+				opacity: 0;
+				transition: opacity 0.2s;
+				z-index: 2;
+			`;
+			copyIndicator.textContent = 'Copied!';
+			itemContainer.appendChild(copyIndicator);
+
+			// Add mapped/unmapped indicator
+			const typeIndicator = document.createElement('div');
+			typeIndicator.style.cssText = `
+				font-size: 11px;
+				color: ${item.isMapped ? '#2196F3' : '#757575'};
+				margin-top: 4px;
+			`;
+			typeIndicator.textContent = item.isMapped ? 'Mapped Field' : 'Additional Info';
+			itemContainer.appendChild(typeIndicator);
+
+			// Add click handler
+			itemContainer.onclick = async () => {
+				try {
+					const textToCopy = item.value.toString();
+					
+					// Get the currently focused element
+					const formElement = lastFocusedElement;
+					const isFormField = formElement && (
+						formElement.tagName === 'INPUT' ||
+						formElement.tagName === 'TEXTAREA' ||
+						formElement.tagName === 'SELECT' ||
+						formElement.isContentEditable ||
+						formElement.getAttribute('role') === 'textbox' ||
+						formElement.getAttribute('contenteditable') === 'true'
+					);
+
+					// Copy to clipboard
+					await navigator.clipboard.writeText(textToCopy);
+
+					// Update the indicator text based on action
+					copyIndicator.textContent = isFormField ? 'Inserted!' : 'Copied!';
+					copyIndicator.style.opacity = '1';
+					setTimeout(() => {
+						copyIndicator.style.opacity = '0';
+					}, 1000);
+
+					// If a form field was last focused, insert the value
+					if (isFormField && formElement) {
+						if (formElement.tagName === 'SELECT') {
+							// For select elements, try to find matching option
+							const options = Array.from(formElement.options);
+							const matchingOption = options.find(opt => 
+								opt.text.toLowerCase().includes(textToCopy.toLowerCase()) ||
+								opt.value.toLowerCase().includes(textToCopy.toLowerCase())
+							);
+							if (matchingOption) {
+								formElement.value = matchingOption.value;
+							}
+						} else if (formElement.isContentEditable || formElement.getAttribute('contenteditable') === 'true') {
+							formElement.textContent = textToCopy;
+						} else {
+							formElement.value = textToCopy;
+						}
+
+						// Trigger change events
+						formElement.dispatchEvent(new Event('input', { bubbles: true }));
+						formElement.dispatchEvent(new Event('change', { bubbles: true }));
+
+						// Visual feedback
+						const originalBackground = formElement.style.backgroundColor;
+						formElement.style.backgroundColor = '#e3f2fd';
+						setTimeout(() => {
+							formElement.style.backgroundColor = originalBackground;
+						}, 500);
+					}
+				} catch (error) {
+					console.error('Failed to copy/insert:', error);
+				}
+			};
+
+			// Add hover effects
+			itemContainer.onmouseover = () => {
+				itemContainer.style.backgroundColor = '#eee';
+			};
+
+			itemContainer.onmouseout = () => {
+				itemContainer.style.backgroundColor = '#f5f5f5';
+			};
+
+			extractedSection.appendChild(itemContainer);
+		});
 
 		content.appendChild(extractedSection);
 	}
@@ -1309,7 +1211,7 @@ function showNotification(message, type) {
 	}, 3000);
 }
 
-// Update fillFormFields function to handle the mappings directly
+// Update fillFormFields function to properly handle the new response format
 function fillFormFields(mappings) {
 	debugLog('Attempting to fill fields with mappings:', mappings);
 
@@ -1319,7 +1221,12 @@ function fillFormFields(mappings) {
 	// Ensure mappings is not wrapped in another object
 	const actualMappings = mappings.mappings || mappings;
 
-	Object.entries(actualMappings).forEach(([fieldId, value]) => {
+	Object.entries(actualMappings).forEach(([fieldId, mapping]) => {
+		// Extract the value from the mapping object
+		const value = typeof mapping === 'object' && mapping.value !== undefined 
+			? mapping.value 
+			: mapping;
+		
 		debugLog(`Trying to fill field "${fieldId}" with value:`, value);
 
 		// Try to find the field using multiple selectors
@@ -1341,10 +1248,10 @@ function fillFormFields(mappings) {
 
 			// Special handling for phone fields
 			if (fieldId === 'phone' || element.type === 'tel') {
-				const cleanPhone = value.replace(/[^0-9+]/g, '');
+				const cleanPhone = value.toString().replace(/[^0-9+]/g, '');
 				element.value = cleanPhone;
 			} else {
-				element.value = value;
+				element.value = value.toString();
 			}
 
 			// Trigger all relevant events
@@ -1578,3 +1485,8 @@ document.addEventListener('focusin', (e) => {
 		className: e.target.className,
 	});
 });
+
+// Helper function to sort by index
+function sortByIndex(a, b) {
+	return (b.index || 0) - (a.index || 0);
+}

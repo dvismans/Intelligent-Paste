@@ -1,5 +1,5 @@
 let OPENAI_API_KEY = null;
-let SYSTEM_PROMPT = null;
+let ADDITIONAL_INSTRUCTIONS = null;
 
 // Simple debug logging function
 function debugLog(message, data = null) {
@@ -46,16 +46,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	}
 
 	if (request.action === 'settingsUpdated') {
+		console.log('Settings update received:', {
+			hasApiKey: !!request.apiKey,
+			hasInstructions: !!request.additionalInstructions,
+			instructions: request.additionalInstructions
+		});
 		OPENAI_API_KEY = request.apiKey;
-		SYSTEM_PROMPT = request.systemPrompt;
+		ADDITIONAL_INSTRUCTIONS = request.additionalInstructions;
 		sendResponse({ success: true });
 		return false;
 	}
 });
 
-// Load API key when background script starts
-chrome.storage.sync.get(['openaiApiKey'], (result) => {
+// Add this function to check storage
+async function checkStorage() {
+	const result = await chrome.storage.sync.get(null); // Get all storage
+	console.log('All storage contents:', result);
+	return result;
+}
+
+// Update the initial load
+chrome.storage.sync.get(['openaiApiKey', 'additionalInstructions'], async (result) => {
+	console.log('Initial load of settings:', {
+		hasApiKey: !!result.openaiApiKey,
+		hasInstructions: !!result.additionalInstructions,
+		instructions: result.additionalInstructions
+	});
+	
+	// Check all storage contents
+	const allStorage = await checkStorage();
+	console.log('All storage at initialization:', allStorage);
+	
 	OPENAI_API_KEY = result.openaiApiKey;
+	ADDITIONAL_INSTRUCTIONS = result.additionalInstructions;
 });
 
 // Add at the top of background.js, right after the variable declarations
@@ -96,10 +119,37 @@ async function handleIntelligentPaste(
 	});
 
 	try {
-		if (!OPENAI_API_KEY) {
-			const result = await chrome.storage.sync.get(['openaiApiKey']);
+		// Check storage at the start of paste handling
+		const allStorage = await checkStorage();
+		console.log('All storage during paste:', allStorage);
+
+		// Get settings if not already loaded
+		if (!OPENAI_API_KEY || ADDITIONAL_INSTRUCTIONS === null) {
+			console.log('Fetching settings because:', {
+				apiKeyMissing: !OPENAI_API_KEY,
+				instructionsMissing: ADDITIONAL_INSTRUCTIONS === null
+			});
+			
+			const result = await chrome.storage.sync.get(['openaiApiKey', 'additionalPrompt']);
+			console.log('Fetched settings:', {
+				hasApiKey: !!result.openaiApiKey,
+				hasInstructions: !!result.additionalPrompt,
+				instructions: result.additionalPrompt
+			});
+			
 			OPENAI_API_KEY = result.openaiApiKey;
+			ADDITIONAL_INSTRUCTIONS = result.additionalPrompt;
 		}
+
+		// Try direct storage access
+		const directCheck = await chrome.storage.sync.get(['additionalPrompt']);
+		console.log('Direct storage check for instructions:', directCheck);
+
+		// Use the most recent value
+		const effectiveInstructions = directCheck.additionalPrompt || ADDITIONAL_INSTRUCTIONS;
+		console.log('Using instructions:', effectiveInstructions);
+
+		console.log('Using Additional Instructions:', effectiveInstructions);
 
 		if (!OPENAI_API_KEY) {
 			console.error('API key not found');
@@ -118,16 +168,10 @@ async function handleIntelligentPaste(
 			throw new Error('No content to process');
 		}
 
-		// Load settings if not already loaded
-		if (!SYSTEM_PROMPT) {
-			const result = await chrome.storage.sync.get(['systemPrompt']);
-			SYSTEM_PROMPT = result.systemPrompt;
-		}
-
 		const messages = [
 			{
 				role: 'system',
-				content: SYSTEM_PROMPT || "You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.",
+				content: "You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.",
 			},
 		];
 
@@ -144,20 +188,29 @@ async function handleIntelligentPaste(
 				content: [
 					{
 						type: 'text',
-						text: `Extract information from this image and respond with ONLY a raw JSON object in this exact format:
+						text: `${effectiveInstructions ? effectiveInstructions + '\n\n' : ''}Extract information from this image and respond with ONLY a raw JSON object in this exact format:
 {
     "mappings": {
         // Use ONLY these field IDs: ${availableFields.join(', ')}
+        // Include an index (0-100) for each mapping to indicate relevance
+        "fieldId": { "value": "extracted value", "index": 90 }
     },
     "unmappedData": {
-        // Include any other information found
+        // Include any other information found with relevance index
+        "label": { "value": "other value", "index": 80 }
     }
 }
+
+The index should be 0-100, where:
+- 90-100: Direct, exact matches or critical form information
+- 70-89: Highly relevant but not exact matches
+- 40-69: Potentially useful related information
+- 0-39: Contextual or supplementary information
 
 Available form fields:
 ${JSON.stringify(formFields, null, 2)}
 
-Remember: Return ONLY the JSON object, no markdown, no code blocks, no explanations.`,
+Remember: Return ONLY the JSON object, no markdown, no code blocks, no explanations.`
 					},
 					{
 						type: 'image_url',
@@ -175,9 +228,11 @@ Remember: Return ONLY the JSON object, no markdown, no code blocks, no explanati
 				.filter(Boolean);
 			console.log('Available fields:', availableFields);
 
+			let userPrompt = `${effectiveInstructions ? effectiveInstructions + '\n\n' : ''}Analyze this text content and extract ALL information:`;
+
 			messages.push({
 				role: 'user',
-				content: `Analyze this text content and extract ALL information:
+					content: userPrompt + `
 
 Text content to analyze:
 ${clipboardText}
@@ -185,20 +240,24 @@ ${clipboardText}
 Available form fields:
 ${JSON.stringify(formFields, null, 2)}
 
-Return a JSON object with two sections:
+Return a JSON object with indexed mappings and unmapped data:
 {
     "mappings": {
         // Use ONLY these field IDs: ${availableFields.join(', ')}
-        "${availableFields[0] || 'example'}": "extracted value"
+        // Include an index (0-100) for each mapping to indicate relevance
+        "fieldId": { "value": "extracted value", "index": 90 }
     },
     "unmappedData": {
-        // Include ANY other information found, with descriptive keys
-        "description": "value",
-        "amount": "value",
-        "date": "value"
-        // etc...
+        // Include ANY other information found, with relevance index
+        "label": { "value": "other value", "index": 80 }
     }
-}`,
+}
+
+The index should be 0-100, where:
+- 90-100: Direct, exact matches or critical form information
+- 70-89: Highly relevant but not exact matches
+- 40-69: Potentially useful related information
+- 0-39: Contextual or supplementary information`
 			});
 		}
 
