@@ -1,7 +1,6 @@
 console.log('Content script loaded!');
 
 // Add both event listeners at the top of the file
-document.addEventListener('paste', handlePaste);
 document.addEventListener('keydown', (e) => {
 	// Check for Alt/Option + P
 	if (e.altKey && e.code === 'KeyP') {
@@ -811,17 +810,11 @@ function createFloatingClipboardWindow(
 	};
 }
 
-// Update the handlePaste function with more granular status updates
+// Update the handlePaste function to remove the floating window check
 async function handlePaste(e) {
 	// Prevent recursive paste handling
 	if (isProcessingPaste) {
 		debugLog('Already processing a paste event, skipping');
-		return;
-	}
-
-	// If floating window is open, let the default paste behavior happen
-	if (currentFloatingWindow) {
-		debugLog('Floating window is open, allowing normal paste');
 		return;
 	}
 
