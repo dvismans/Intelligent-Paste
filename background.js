@@ -1,49 +1,12 @@
 let OPENAI_API_KEY = null;
-let devToolsConnection = null;
 
-// Add devtools connection handling
-chrome.runtime.onConnect.addListener((port) => {
-	if (port.name === 'devtools-page') {
-		console.log('DevTools connected');
-		devToolsConnection = port;
-
-		// Send initial log to confirm connection
-		debugLog('DevTools connected');
-
-		port.onMessage.addListener((msg) => {
-			if (msg.name === 'init') {
-				console.log('DevTools initialized with tab:', msg.tabId);
-			}
-		});
-
-		// Remove the connection reference when devtools is closed
-		port.onDisconnect.addListener(() => {
-			console.log('DevTools disconnected');
-			devToolsConnection = null;
-		});
-	}
-});
-
-// Update the debug logging function
+// Simple debug logging function
 function debugLog(message, data = null) {
 	const timestamp = new Date().toISOString();
 	const logMessage = data
-		? `${timestamp} - ${message} ${JSON.stringify(data)}`
+		? `${timestamp} - ${message} ${JSON.stringify(data, null, 2)}`
 		: `${timestamp} - ${message}`;
 	console.log(logMessage);
-
-	// Send to devtools if connected
-	if (devToolsConnection) {
-		try {
-			devToolsConnection.postMessage({
-				type: 'log',
-				data: logMessage,
-			});
-		} catch (error) {
-			console.error('Error sending log to DevTools:', error);
-			devToolsConnection = null; // Reset connection if sending fails
-		}
-	}
 }
 
 // Add message listener at the top level

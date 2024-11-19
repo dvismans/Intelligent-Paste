@@ -97,21 +97,11 @@ async function testClipboardAccess(e) {
 
 // Update the debug logging function
 function debugLog(message, data = null) {
-	const logMessage = data ? `${message} ${JSON.stringify(data)}` : message;
+	const timestamp = new Date().toISOString();
+	const logMessage = data 
+		? `${timestamp} - ${message} ${JSON.stringify(data, null, 2)}`
+		: `${timestamp} - ${message}`;
 	console.log(logMessage);
-
-	// Only try to send to background if chrome.runtime is available
-	if (chrome?.runtime?.sendMessage) {
-		chrome.runtime
-			.sendMessage({
-				action: 'debugLog',
-				message: logMessage,
-			})
-			.catch(() => {
-				// Ignore errors if background script is not ready or disconnected
-				console.log('Failed to send log to background script');
-			});
-	}
 }
 
 // Global variables at the top
@@ -125,8 +115,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		// Get all form fields first
 		const formFields = getAllFormFields();
 		if (!formFields || formFields.length === 0) {
-			showNotification('No form fields found on page', 'error');
-			return;
+				showNotification('No form fields found on page', 'error');
+				return;
 		}
 
 		// Create synthetic paste event
