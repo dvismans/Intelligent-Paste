@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Extension Settings</title>
+    <style>
+        body {
+            width: 100%;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+            font-family: Arial, sans-serif;
+        }
+        .settings-container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .setting-group {
+            margin-bottom: 20px;
+        }
+        .setting-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .save-status {
+            margin-top: 10px;
+            color: #4CAF50;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="settings-container">
+        <h1>Extension Settings</h1>
+        <div class="setting-group">
+            <label for="additional-instructions">Additional Instructions for AI:</label>
+            <textarea id="additional-instructions" placeholder="Enter any additional instructions you want to include with every AI request..."></textarea>
+        </div>
+        <button id="save-settings">Save Settings</button>
+        <div id="save-status" class="save-status">Settings saved successfully!</div>
+    </div>
+    <script src="settings.js"></script>
+</body>
+</html> 

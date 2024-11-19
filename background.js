@@ -85,6 +85,7 @@ async function handleIntelligentPaste(
 	formFields,
 	imageBase64 = null
 ) {
+	const startTime = Date.now();
 	console.group('=== Intelligent Paste Request ===');
 	console.log('Request Details:', {
 		hasClipboardText: !!clipboardText,
