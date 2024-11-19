@@ -126,6 +126,49 @@
             color: #d32f2f;
             border: 1px solid #ffcdd2;
         }
+        .prompt-section {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .prompt-label {
+            display: block;
+            font-size: 14px;
+            color: #444;
+            margin-bottom: 8px;
+        }
+        .prompt-textarea {
+            width: calc(100% - 16px);
+            height: 100px;
+            padding: 8px;
+            margin-bottom: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        .prompt-textarea:focus {
+            outline: none;
+            border-color: #2196F3;
+            box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+        }
+        .reset-button {
+            background-color: #666;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 8px;
+            transition: background-color 0.2s;
+        }
+        .reset-button:hover {
+            background-color: #555;
+        }
     </style>
 </head>
 <body>
@@ -149,6 +192,17 @@
             spellcheck="false"
         >
         <button id="saveApiKey" class="save-button">Save API Key</button>
+    </div>
+
+    <div class="prompt-section">
+        <label class="prompt-label" for="systemPrompt">System Prompt</label>
+        <textarea 
+            id="systemPrompt" 
+            class="prompt-textarea" 
+            spellcheck="false"
+            placeholder="Enter the system prompt for OpenAI..."
+        ></textarea>
+        <button id="resetPrompt" class="reset-button">Reset to Default</button>
     </div>
 
     <div id="statusMessage" class="status-message"></div>

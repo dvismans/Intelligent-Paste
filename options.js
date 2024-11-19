@@ -1,64 +1,65 @@
 document.addEventListener('DOMContentLoaded', () => {
 	const apiKeyInput = document.getElementById('apiKey');
-	const saveButton = document.getElementById('saveSettings');
-	const status = document.getElementById('status');
-	const toggleBtn = document.querySelector('.toggle-password');
+	const additionalPrompt = document.getElementById('additionalPrompt');
+	const saveSettings = document.getElementById('saveSettings');
+	const statusMessage = document.getElementById('statusMessage');
+	const basePromptArea = document.querySelector('.base-prompt');
 
-	// Load saved API key
-	chrome.storage.sync.get(['openaiApiKey'], (result) => {
+	const BASE_PROMPT = `You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.
+
+The 'mappings' object should contain field IDs as keys and extracted values as values.
+The 'unmappedData' object should contain any additional information found that doesn't map to available fields.`;
+
+	// Set the base prompt
+	basePromptArea.value = BASE_PROMPT;
+
+	// Load saved settings
+	chrome.storage.sync.get(['openaiApiKey', 'additionalPrompt'], (result) => {
 		if (result.openaiApiKey) {
 			apiKeyInput.value = result.openaiApiKey;
 		}
+		if (result.additionalPrompt) {
+			additionalPrompt.value = result.additionalPrompt;
+		}
 	});
 
-	// Save API key
-	saveButton.addEventListener('click', () => {
+	// Save settings
+	saveSettings.addEventListener('click', () => {
 		const apiKey = apiKeyInput.value.trim();
+		const additionalInstructions = additionalPrompt.value.trim();
 
 		if (!apiKey) {
 			showStatus('Please enter an API key', 'error');
 			return;
 		}
 
-		// Basic validation for OpenAI API key format
-		if (!apiKey.startsWith('sk-') || apiKey.length < 20) {
-			showStatus('Invalid API key format. It should start with "sk-"', 'error');
-			return;
-		}
+		// Combine base prompt with additional instructions
+		const fullPrompt = additionalInstructions 
+			? `${BASE_PROMPT}\n\nAdditional Instructions:\n${additionalInstructions}`
+			: BASE_PROMPT;
 
-		chrome.storage.sync.set(
-			{
-				openaiApiKey: apiKey,
-			},
-			() => {
-				showStatus('API key saved successfully!', 'success');
-				// Notify background script of API key change
-				chrome.runtime.sendMessage({ action: 'apiKeyUpdated', apiKey });
-			}
-		);
+		chrome.storage.sync.set({ 
+			openaiApiKey: apiKey,
+			additionalPrompt: additionalInstructions,
+			systemPrompt: fullPrompt
+		}, () => {
+			showStatus('Settings saved successfully!', 'success');
+			// Notify background script of changes
+			chrome.runtime.sendMessage({ 
+				action: 'settingsUpdated',
+				apiKey,
+				systemPrompt: fullPrompt
+			});
+		});
 	});
 
 	function showStatus(message, type) {
-		status.textContent = message;
-		status.className = `status ${type}`;
-		status.style.display = 'block';
+		statusMessage.textContent = message;
+		statusMessage.className = `status-message ${type}`;
+		statusMessage.style.display = 'block';
 
 		setTimeout(() => {
-			status.style.display = 'none';
+			statusMessage.style.display = 'none';
 		}, 3000);
 	}
 });
-
-// Add password toggle function
-function togglePassword() {
-	const apiKeyInput = document.getElementById('apiKey');
-	const toggleBtn = document.querySelector('.toggle-password');
-
-	if (apiKeyInput.type === 'password') {
-		apiKeyInput.type = 'text';
-		toggleBtn.textContent = 'Hide';
-	} else {
-		apiKeyInput.type = 'password';
-		toggleBtn.textContent = 'Show';
-	}
-}

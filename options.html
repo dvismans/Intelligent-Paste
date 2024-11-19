@@ -4,93 +4,152 @@
 		<title>Intelligent Paste Settings</title>
 		<style>
 			body {
-				width: 100%;
-				max-width: 800px;
-				margin: 20px auto;
+				width: 800px;
+				margin: 0 auto;
 				padding: 20px;
 				font-family: Arial, sans-serif;
 			}
-			.container {
-				background: #f8f9fa;
-				border: 1px solid #ddd;
-				border-radius: 8px;
-				padding: 20px;
-			}
 			h1 {
 				color: #333;
+				font-size: 24px;
 				margin-bottom: 20px;
 			}
-			.form-group {
+			.settings-section {
+				background: #f8f9fa;
+				border: 1px solid #ddd;
+				border-radius: 6px;
+				padding: 20px;
 				margin-bottom: 20px;
 			}
-			label {
-				display: block;
-				margin-bottom: 8px;
-				font-weight: bold;
+			.section-title {
+				font-size: 18px;
 				color: #333;
+				margin-bottom: 16px;
 			}
-			input[type='password'] {
-				width: 100%;
-				padding: 12px;
+			.api-key-label, .prompt-label {
+				display: block;
+				font-size: 14px;
+				color: #444;
+				margin-bottom: 8px;
+			}
+			.api-key-input {
+				width: calc(100% - 16px);
+				padding: 8px;
+				margin-bottom: 12px;
 				border: 1px solid #ddd;
 				border-radius: 4px;
-				font-size: 14px;
+				font-size: 13px;
 				font-family: monospace;
 			}
-			input[type='password']:focus {
+			.base-prompt {
+				width: calc(100% - 16px);
+				padding: 8px;
+				margin-bottom: 12px;
+				background: #f0f0f0;
+				border: 1px solid #ddd;
+				border-radius: 4px;
+				font-size: 13px;
+				font-family: monospace;
+				color: #666;
+				min-height: 100px;
+				resize: none;
+			}
+			.prompt-textarea {
+				width: calc(100% - 16px);
+				height: 100px;
+				padding: 8px;
+				margin-bottom: 12px;
+				border: 1px solid #ddd;
+				border-radius: 4px;
+				font-size: 13px;
+				font-family: monospace;
+				resize: vertical;
+			}
+			.api-key-input:focus, .prompt-textarea:focus {
 				outline: none;
-				border-color: #2196f3;
+				border-color: #2196F3;
 				box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
 			}
-			button {
-				background: #2196f3;
+			.save-button {
+				background-color: #2196F3;
 				color: white;
 				border: none;
-				padding: 12px 24px;
+				padding: 10px 20px;
 				border-radius: 4px;
 				cursor: pointer;
 				font-size: 14px;
-				transition: background 0.2s;
+				transition: background-color 0.2s;
 			}
-			button:hover {
-				background: #1976d2;
+			.save-button:hover {
+				background-color: #1976D2;
 			}
-			.status {
-				margin-top: 16px;
-				padding: 12px;
+			.status-message {
+				margin-top: 12px;
+				padding: 8px 12px;
 				border-radius: 4px;
 				display: none;
+				font-size: 14px;
 			}
 			.success {
-				background: #e8f5e9;
+				background-color: #e8f5e9;
 				color: #2e7d32;
 				border: 1px solid #a5d6a7;
 			}
 			.error {
-				background: #ffebee;
-				color: #c62828;
-				border: 1px solid #ef9a9a;
+				background-color: #fbe9e7;
+				color: #d32f2f;
+				border: 1px solid #ffcdd2;
+			}
+			.description {
+				font-size: 14px;
+				color: #666;
+				margin-bottom: 16px;
+				line-height: 1.4;
 			}
 		</style>
 	</head>
 	<body>
-		<div class="container">
-			<h1>Intelligent Paste Settings</h1>
-			<div class="form-group">
-				<label for="apiKey">OpenAI API Key</label>
-				<input
-					type="password"
-					id="apiKey"
-					placeholder="sk-..."
-					spellcheck="false"
-				/>
+		<h1>Intelligent Paste Settings</h1>
+
+		<div class="settings-section">
+			<div class="section-title">API Key</div>
+			<div class="description">
+				Enter your OpenAI API key. You can get one from 
+				<a href="https://platform.openai.com/api-keys" target="_blank">OpenAI's API Keys page</a>.
 			</div>
-			<button id="saveSettings">Save Settings</button>
-			<div
-				id="status"
-				class="status"
-			></div>
+			<label class="api-key-label" for="apiKey">OpenAI API Key</label>
+			<input 
+				type="password" 
+				id="apiKey" 
+				class="api-key-input" 
+				placeholder="sk-..."
+				spellcheck="false"
+			>
 		</div>
+
+		<div class="settings-section">
+			<div class="section-title">System Prompt</div>
+			<div class="description">
+				The base prompt instructs the AI how to process form fields. You can add additional instructions below.
+			</div>
+			<label class="prompt-label">Base Prompt (read-only)</label>
+			<textarea 
+				class="base-prompt" 
+				readonly
+			></textarea>
+
+			<label class="prompt-label" for="additionalPrompt">Additional Instructions</label>
+			<textarea 
+				id="additionalPrompt" 
+				class="prompt-textarea" 
+				spellcheck="false"
+				placeholder="Add your custom instructions here..."
+			></textarea>
+		</div>
+
+		<button id="saveSettings" class="save-button">Save Settings</button>
+		<div id="statusMessage" class="status-message"></div>
+
 		<script src="options.js"></script>
 	</body>
 </html>

@@ -1,12 +1,24 @@
 let OPENAI_API_KEY = null;
+let SYSTEM_PROMPT = null;
 
 // Simple debug logging function
 function debugLog(message, data = null) {
+	// Always log to background console
+	if (data) {
+		console.group(message);
+		console.log(data);
+		console.groupEnd();
+	} else {
+		console.log(message);
+	}
+
+	// Format for any other listeners
 	const timestamp = new Date().toISOString();
-	const logMessage = data
-		? `${timestamp} - ${message} ${JSON.stringify(data, null, 2)}`
+	const logMessage = data 
+		? `${timestamp} - ${message}\n${JSON.stringify(data, null, 2)}`
 		: `${timestamp} - ${message}`;
-	console.log(logMessage);
+
+	return logMessage;
 }
 
 // Add message listener at the top level
@@ -30,6 +42,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 	if (request.action === 'debugLog') {
 		console.log(request.message);
+		return false;
+	}
+
+	if (request.action === 'settingsUpdated') {
+		OPENAI_API_KEY = request.apiKey;
+		SYSTEM_PROMPT = request.systemPrompt;
+		sendResponse({ success: true });
 		return false;
 	}
 });
@@ -66,11 +85,14 @@ async function handleIntelligentPaste(
 	formFields,
 	imageBase64 = null
 ) {
-	const startTime = Date.now();
-	debugLog('=== Starting Intelligent Paste Request ===');
-	debugLog('Processing clipboard text:', clipboardText);
-	debugLog('Form fields:', formFields);
-	debugLog('Image included:', !!imageBase64);
+	console.group('=== Intelligent Paste Request ===');
+	console.log('Request Details:', {
+		hasClipboardText: !!clipboardText,
+		clipboardTextLength: clipboardText?.length,
+		formFieldsCount: formFields?.length,
+		hasImage: !!imageBase64,
+		imageSize: imageBase64?.length
+	});
 
 	try {
 		if (!OPENAI_API_KEY) {
@@ -79,37 +101,42 @@ async function handleIntelligentPaste(
 		}
 
 		if (!OPENAI_API_KEY) {
-			debugLog('API key not found');
+			console.error('API key not found');
 			throw new Error(
 				'OpenAI API key not set. Please set your API key in the extension options.'
 			);
 		}
 
 		if (!formFields || formFields.length === 0) {
-			debugLog('No form fields provided');
+			console.error('No form fields provided');
 			throw new Error('No form fields to fill');
 		}
 
 		if (!imageBase64 && !clipboardText) {
-			debugLog('No content to process');
+			console.error('No content to process');
 			throw new Error('No content to process');
+		}
+
+		// Load settings if not already loaded
+		if (!SYSTEM_PROMPT) {
+			const result = await chrome.storage.sync.get(['systemPrompt']);
+			SYSTEM_PROMPT = result.systemPrompt;
 		}
 
 		const messages = [
 			{
 				role: 'system',
-				content:
-					"You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.",
+				content: SYSTEM_PROMPT || "You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.",
 			},
 		];
 
 		// Add content message based on what we have
 		if (imageBase64) {
-			debugLog('Using GPT-4 Vision');
+			console.log('Using GPT-4 Vision API');
 			const availableFields = formFields
 				.map((f) => f.id || f.name)
 				.filter(Boolean);
-			debugLog('Available fields:', availableFields);
+			console.log('Available fields:', availableFields);
 
 			messages.push({
 				role: 'user',
@@ -141,11 +168,11 @@ Remember: Return ONLY the JSON object, no markdown, no code blocks, no explanati
 			});
 		} else if (clipboardText) {
 			// Handle text content
-			debugLog('Using text content');
+			console.log('Using text content');
 			const availableFields = formFields
 				.map((f) => f.id || f.name)
 				.filter(Boolean);
-			debugLog('Available fields:', availableFields);
+			console.log('Available fields:', availableFields);
 
 			messages.push({
 				role: 'user',
@@ -182,126 +209,89 @@ Return a JSON object with two sections:
 			seed: 123,
 		};
 
-		debugLog('=== OpenAI Request ===');
-		debugLog('Request URL: https://api.openai.com/v1/chat/completions');
-		debugLog('Request Method: POST');
-		debugLog('Request Headers:', {
+		console.group('OpenAI Request');
+		console.log('URL:', 'https://api.openai.com/v1/chat/completions');
+		console.log('Method: POST');
+		console.log('Headers:', {
 			'Content-Type': 'application/json',
-			Authorization: 'Bearer sk-....' + OPENAI_API_KEY.slice(-4),
+			'Authorization': 'Bearer sk-....' + OPENAI_API_KEY.slice(-4)
 		});
-
-		debugLog('System Prompt:', messages[0].content);
-
-		if (messages[1]) {
-			if (Array.isArray(messages[1].content)) {
-				debugLog(
-					'User Prompt Text:',
-					messages[1].content.find((c) => c.type === 'text')?.text
-				);
-				debugLog(
-					'User Prompt Includes Image:',
-					messages[1].content.some((c) => c.type === 'image_url')
-				);
-			} else {
-				debugLog('User Prompt:', messages[1].content);
-			}
-		}
-
-		debugLog('Full Request:', {
-			model: requestBody.model,
-			messages: messages.map((m) => ({
-				role: m.role,
-				content: Array.isArray(m.content)
-					? m.content.map((c) =>
-							c.type === 'image_url'
-								? { ...c, image_url: { url: '[BASE64_IMAGE_DATA]' } }
-								: c
-					  )
-					: m.content,
-			})),
-			max_tokens: requestBody.max_tokens,
-			temperature: requestBody.temperature,
-		});
+		console.log('Request Body:', JSON.stringify(requestBody, null, 2));
+		console.groupEnd();
 
 		const response = await fetch('https://api.openai.com/v1/chat/completions', {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				Authorization: `Bearer ${OPENAI_API_KEY}`,
+				'Authorization': `Bearer ${OPENAI_API_KEY}`,
 			},
 			body: JSON.stringify(requestBody),
 		});
 
-		debugLog('=== OpenAI Response ===');
-		debugLog('Response Status:', response.status);
-		debugLog(
-			'Response Headers:',
-			Object.fromEntries(response.headers.entries())
-		);
+		console.group('OpenAI Response');
+		console.log('Status:', response.status);
+		console.log('Headers:', Object.fromEntries(response.headers.entries()));
 
 		if (!response.ok) {
 			const errorText = await response.text();
-			debugLog('OpenAI Error Response:', errorText);
+			console.error('Error Response:', errorText);
 			throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
 		}
 
 		const data = await response.json();
-		debugLog('OpenAI Response Body:', data);
+		console.log('Response Body:', JSON.stringify(data, null, 2));
+		console.groupEnd();
 
 		if (!data.choices?.[0]?.message?.content) {
-			debugLog('Invalid response format from OpenAI');
+			console.error('Invalid response format from OpenAI');
 			throw new Error('Invalid response from OpenAI');
 		}
 
 		const content = data.choices[0].message.content;
-		debugLog('Raw content from OpenAI:', content);
+		console.log('Raw content from OpenAI:', content);
 
 		let mappings;
 		try {
 			mappings = JSON.parse(content);
-			debugLog('Successfully parsed mappings:', mappings);
+			console.log('Successfully parsed mappings:', mappings);
 		} catch (error) {
-			debugLog('Error parsing content as JSON:', error);
+			console.error('Error parsing content as JSON:', error);
 			const jsonMatch = content.match(/\{[\s\S]*\}/);
 			if (jsonMatch) {
 				mappings = JSON.parse(jsonMatch[0]);
-				debugLog('Successfully extracted and parsed mappings:', mappings);
+				console.log('Successfully extracted and parsed mappings:', mappings);
 			} else {
-				debugLog('Failed to parse response as JSON');
+				console.error('Failed to parse response as JSON');
 				throw new Error('Failed to parse OpenAI response as JSON');
 			}
 		}
 
 		if (!mappings || (!mappings.mappings && !mappings.unmappedData)) {
-			debugLog('No valid data found in response');
+			console.error('No valid data found in response');
 			throw new Error('No valid data found in OpenAI response');
 		}
 
-		debugLog('=== Request Summary ===');
-		debugLog('Total Tokens Used:', data.usage.total_tokens);
-		debugLog(
-			'Cost Estimate:',
-			`$${((data.usage.total_tokens / 1000) * 0.01).toFixed(4)}`
-		);
-		debugLog('Processing Time:', `${Date.now() - startTime}ms`);
+		console.group('Request Summary');
+		console.log('Total Tokens Used:', data.usage.total_tokens);
+		console.log('Cost Estimate:', `$${((data.usage.total_tokens / 1000) * 0.01).toFixed(4)}`);
+		console.log('Processing Time:', `${Date.now() - startTime}ms`);
+		console.groupEnd();
 
 		return {
 			mappings: mappings.mappings || mappings,
-			unmappedData: mappings.unmappedData || {},
-			cost: {
-				total: (data.usage.total_tokens / 1000) * 0.01,
-				inputTokens: data.usage.prompt_tokens,
-				outputTokens: data.usage.completion_tokens,
-				imageCount: imageBase64 ? 1 : 0,
-			},
+				unmappedData: mappings.unmappedData || {},
+				cost: {
+					total: (data.usage.total_tokens / 1000) * 0.01,
+					inputTokens: data.usage.prompt_tokens,
+					outputTokens: data.usage.completion_tokens,
+					imageCount: imageBase64 ? 1 : 0,
+				},
 		};
 	} catch (error) {
-		debugLog('Error in handleIntelligentPaste:', {
-			name: error.name,
-			message: error.message,
-			stack: error.stack,
-		});
+		console.error('Error in handleIntelligentPaste:', error);
 		throw error;
+	} finally {
+		console.groupEnd(); // Close main group
 	}
 }
 
