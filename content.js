@@ -1104,7 +1104,6 @@ function getAllFormFields() {
 		// Only if no forms found, look for inputs anywhere in the document
 		debugLog('No form elements found, searching entire document');
 
-		// Generic selectors for form fields
 		const selectors = [
 			'input:not([type="hidden"]):not([type="submit"]):not([type="button"])',
 			'textarea',
@@ -1167,6 +1166,15 @@ function processInputs(inputs, formFields) {
 			input.getAttribute('title') ||
 			input.getAttribute('data-label');
 
+		// Get select options if it's a select element
+		let options = null;
+		if (input.tagName === 'SELECT') {
+			options = Array.from(input.options).map((opt) => ({
+				value: opt.value,
+				text: opt.text,
+			}));
+		}
+
 		// Log detailed field information
 		debugLog('Found field:', {
 			element: input.tagName,
@@ -1174,6 +1182,7 @@ function processInputs(inputs, formFields) {
 			identifiers,
 			label,
 			value: input.value,
+			options,
 			isVisible: isElementVisible(input),
 			path: getElementPath(input),
 			isInForm,
@@ -1186,6 +1195,7 @@ function processInputs(inputs, formFields) {
 			placeholder: input.placeholder,
 			label: label,
 			isInForm,
+			options, // Include select options in field info
 			identifiers: Object.fromEntries(
 				Object.entries(identifiers).filter(([_, v]) => v)
 			),
@@ -1326,7 +1336,7 @@ function showNotification(message, type) {
 	}, 3000);
 }
 
-// Update fillFormFields function to properly handle the new response format
+// Update fillFormFields function's validation part
 function fillFormFields(mappings) {
 	debugLog('Attempting to fill fields with mappings:', mappings);
 	const filledFields = [];
@@ -1343,131 +1353,80 @@ function fillFormFields(mappings) {
 				: mapping;
 
 		debugLog(`Trying to fill field "${fieldIdentifier}" with value:`, value);
-		let element = null;
 
-		// Existing selector strategies...
-		for (const strategy of selectorStrategies) {
-			element = strategy(fieldIdentifier);
-			if (element) break;
-		}
+		// Try to find all matching elements (there might be multiple with same name)
+		const elements = findFormElements(fieldIdentifier);
+		debugLog(
+			`Found ${elements.length} matching elements for "${fieldIdentifier}"`,
+			elements
+		);
 
-		if (element) {
-			try {
-				// Store original value for comparison
-				const originalValue = element.value;
+		if (elements.length > 0) {
+			let successfulFill = false;
 
-				// Fill the field based on type
-				if (
-					fieldIdentifier.toLowerCase().includes('phone') ||
-					element.type === 'tel'
-				) {
-					const cleanPhone = value.toString().replace(/[^0-9+]/g, '');
-					element.value = cleanPhone;
-				} else if (element.type === 'date') {
-					try {
-						const date = new Date(value);
-						if (!isNaN(date)) {
-							element.value = date.toISOString().split('T')[0];
-						} else {
-							element.value = value.toString();
-						}
-					} catch {
-						element.value = value.toString();
-					}
-				} else if (element.tagName === 'SELECT') {
-					const options = Array.from(element.options);
-					const matchingOption = options.find(
-						(opt) =>
-							opt.text.toLowerCase().includes(value.toString().toLowerCase()) ||
-							opt.value.toLowerCase().includes(value.toString().toLowerCase())
+			for (const element of elements) {
+				try {
+					// Store original value for comparison
+					const originalValue = getElementValue(element);
+					debugLog(`Original value for "${fieldIdentifier}":`, originalValue);
+
+					// Set the value
+					setElementValue(element, value);
+
+					// Trigger events
+					['focus', 'input', 'change', 'blur'].forEach((eventType) => {
+						element.dispatchEvent(new Event(eventType, { bubbles: true }));
+					});
+
+					// Validate immediately and after a short delay
+					const immediateValue = getElementValue(element);
+					debugLog(
+						`Immediate value after setting "${fieldIdentifier}":`,
+						immediateValue
 					);
-					if (matchingOption) {
-						element.value = matchingOption.value;
-					} else {
-						element.value = value.toString();
-					}
-				} else {
-					element.value = value.toString();
+
+					// Wait for any potential async updates
+					setTimeout(() => {
+						const finalValue = getElementValue(element);
+						debugLog(`Final value for "${fieldIdentifier}":`, finalValue);
+
+						const valueMatches = validateElementValue(element, value);
+
+						if (valueMatches) {
+							debugLog(
+								`✅ Validated field "${fieldIdentifier}": Value set successfully`
+							);
+							results.successful.push({
+								field: fieldIdentifier,
+								value: finalValue,
+								element: element,
+							});
+							highlightField(element, 'success');
+							successfulFill = true;
+						} else {
+							debugLog(`❌ Validation failed for "${fieldIdentifier}":`, {
+								expected: value,
+								actual: finalValue,
+								originalValue: originalValue,
+							});
+							results.failed.push({
+								field: fieldIdentifier,
+								expectedValue: value,
+								actualValue: finalValue,
+								element: element,
+							});
+							highlightField(element, 'error');
+						}
+					}, 100);
+				} catch (error) {
+					debugLog(`Error filling field "${fieldIdentifier}":`, error);
+					results.failed.push({
+						field: fieldIdentifier,
+						error: error.message,
+						element: element,
+					});
+					highlightField(element, 'error');
 				}
-
-				// Trigger events
-				['focus', 'input', 'change', 'blur'].forEach((eventType) => {
-					element.dispatchEvent(new Event(eventType, { bubbles: true }));
-				});
-
-				// Validate the field was actually filled
-				setTimeout(() => {
-					const currentValue = element.value;
-					const expectedValue =
-						element.tagName === 'SELECT'
-							? element.options[element.selectedIndex]?.text
-							: value.toString();
-
-					const valueMatches =
-						element.tagName === 'SELECT'
-							? currentValue &&
-							  (currentValue
-									.toLowerCase()
-									.includes(value.toString().toLowerCase()) ||
-									element.options[element.selectedIndex]?.text
-										.toLowerCase()
-										.includes(value.toString().toLowerCase()))
-							: currentValue === value.toString();
-
-					if (valueMatches) {
-						debugLog(
-							`✅ Validated field "${fieldIdentifier}": Value set successfully`
-						);
-						results.successful.push({
-							field: fieldIdentifier,
-							value: currentValue,
-							element: element,
-						});
-						highlightField(element, 'success');
-					} else {
-						debugLog(`❌ Validation failed for "${fieldIdentifier}":`, {
-							expected: value,
-							actual: currentValue,
-							originalValue: originalValue,
-						});
-						results.failed.push({
-							field: fieldIdentifier,
-							expectedValue: value,
-							actualValue: currentValue,
-							element: element,
-						});
-						highlightField(element, 'error');
-					}
-				}, 100); // Small delay to ensure events are processed
-
-				filledFields.push(element);
-
-				// Handle labels
-				const labels = [
-					...Array.from(
-						document.querySelectorAll(`label[for="${element.id}"]`)
-					),
-					element.closest('label'),
-					element.parentElement?.querySelector('label'),
-					...Array.from(document.getElementsByTagName('label')).filter(
-						(label) =>
-							label.textContent
-								.toLowerCase()
-								.includes(fieldIdentifier.toLowerCase())
-					),
-				].filter(Boolean);
-
-				labels.forEach((label) => {
-					filledFields.push(label);
-				});
-			} catch (error) {
-				debugLog(`Error filling field "${fieldIdentifier}":`, error);
-				results.failed.push({
-					field: fieldIdentifier,
-					error: error.message,
-					element: element,
-				});
-				highlightField(element, 'error');
 			}
 		} else {
 			debugLog(`Could not find element for "${fieldIdentifier}"`);
@@ -1478,54 +1437,126 @@ function fillFormFields(mappings) {
 		}
 	});
 
-	// Update the final status message based on validation results
-	const successCount = results.successful.length;
-	const failCount = results.failed.length;
-	const totalFields = Object.keys(actualMappings).length;
+	return results;
+}
 
-	if (failCount > 0) {
-		debugLog(`⚠️ Form filling completed with issues:`, {
-			total: totalFields,
-			successful: successCount,
-			failed: failCount,
-			failedFields: results.failed,
-		});
-		return {
-			success: false,
-			message: `Filled ${successCount} fields, ${failCount} failed`,
-			results: results,
-		};
+// New helper functions for better element handling
+function findFormElements(identifier) {
+	const elements = [];
+
+	// Try all these queries
+	const queries = [
+		// By name (most common for forms)
+		`[name="${identifier}"]`,
+		// By ID if it exists
+		`#${identifier}`,
+
+		// By various data attributes
+		`[data-field="${identifier}"]`,
+		`[data-test-id="${identifier}"]`,
+		`[data-name="${identifier}"]`,
+
+		// By aria attributes
+		`[aria-label="${identifier}"]`,
+
+		// Partial matches on name
+		`[name*="${identifier}"]`,
+	];
+
+	// Try each query
+	queries.forEach((query) => {
+		try {
+			const found = document.querySelectorAll(query);
+			found.forEach((element) => {
+				if (!elements.includes(element) && isValidFormField(element)) {
+					elements.push(element);
+				}
+			});
+		} catch (e) {
+			debugLog(`Query failed: ${query}`, e);
+		}
+	});
+
+	// Try finding by label text
+	document.querySelectorAll('label').forEach((label) => {
+		if (label.textContent.toLowerCase().includes(identifier.toLowerCase())) {
+			const forElement = label.getAttribute('for')
+				? document.getElementById(label.getAttribute('for'))
+				: label.querySelector('input, textarea, select');
+
+			if (
+				forElement &&
+				!elements.includes(forElement) &&
+				isValidFormField(forElement)
+			) {
+				elements.push(forElement);
+			}
+		}
+	});
+
+	return elements;
+}
+
+function getElementValue(element) {
+	if (element.tagName === 'SELECT') {
+		return element.options[element.selectedIndex]?.text || element.value;
+	} else if (
+		element.isContentEditable ||
+		element.getAttribute('contenteditable') === 'true'
+	) {
+		return element.textContent;
 	} else {
-		debugLog(`✅ Form filling completed successfully:`, {
-			total: totalFields,
-			successful: successCount,
-		});
-		return {
-			success: true,
-			message: `Successfully filled ${successCount} fields`,
-			results: results,
-		};
+		return element.value;
 	}
 }
 
-// Update highlightField function to handle success/error states
-function highlightField(element, state = 'success') {
-	const successStyle = `
-		background-color: rgba(33, 150, 243, 0.05) !important;
-		border-color: #2196F3 !important;
-		box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.2) !important;
-	`;
+function setElementValue(element, value) {
+	if (element.tagName === 'SELECT') {
+		const options = Array.from(element.options);
+		const matchingOption = options.find(
+			(opt) =>
+				opt.text.toLowerCase().includes(value.toString().toLowerCase()) ||
+				opt.value.toLowerCase().includes(value.toString().toLowerCase())
+		);
+		if (matchingOption) {
+			element.value = matchingOption.value;
+		}
+	} else if (
+		element.isContentEditable ||
+		element.getAttribute('contenteditable') === 'true'
+	) {
+		element.textContent = value.toString();
+	} else {
+		element.value = value.toString();
+	}
+}
 
-	const errorStyle = `
-		background-color: rgba(244, 67, 54, 0.05) !important;
-		border-color: #f44336 !important;
-		box-shadow: 0 0 0 1px rgba(244, 67, 54, 0.2) !important;
-	`;
+function validateElementValue(element, expectedValue) {
+	const currentValue = getElementValue(element);
 
-	element.style.cssText += `
-		transition: all 0.3s ease !important;
-		${state === 'success' ? successStyle : errorStyle}
-	`;
+	// Handle empty values
+	if (!currentValue && expectedValue) {
+		return false;
+	}
+
+	// For select elements, check both value and text
+	if (element.tagName === 'SELECT') {
+		return (
+			element.value &&
+			(element.value
+				.toLowerCase()
+				.includes(expectedValue.toString().toLowerCase()) ||
+				element.options[element.selectedIndex]?.text
+					.toLowerCase()
+					.includes(expectedValue.toString().toLowerCase()))
+		);
+	}
+
+	// For other elements, do a direct comparison
+	return (
+		currentValue.toString().toLowerCase() ===
+		expectedValue.toString().toLowerCase()
+	);
 }
 
 // Update the keyboard shortcut handling
@@ -1757,3 +1788,60 @@ const selectorStrategies = [
 		return label?.control || label?.querySelector('input, textarea, select');
 	},
 ];
+
+// Add this function for field highlighting
+function highlightField(element, state = 'success') {
+	// Save original styles if not already saved
+	if (!element.dataset.originalStyle) {
+		element.dataset.originalStyle = element.style.cssText;
+	}
+
+	const successStyle = `
+		background-color: rgba(33, 150, 243, 0.05) !important;
+		border-color: #2196F3 !important;
+		box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.2) !important;
+		transition: all 0.3s ease !important;
+	`;
+
+	const errorStyle = `
+		background-color: rgba(244, 67, 54, 0.05) !important;
+		border-color: #f44336 !important;
+		box-shadow: 0 0 0 1px rgba(244, 67, 54, 0.2) !important;
+		transition: all 0.3s ease !important;
+	`;
+
+	// Apply new styles
+	element.style.cssText += state === 'success' ? successStyle : errorStyle;
+
+	// Find and highlight associated labels
+	const labels = [
+		...Array.from(document.querySelectorAll(`label[for="${element.id}"]`)),
+		element.closest('label'),
+		element.parentElement?.querySelector('label'),
+	].filter(Boolean);
+
+	labels.forEach((label) => {
+		if (!label.dataset.originalStyle) {
+			label.dataset.originalStyle = label.style.cssText;
+		}
+		label.style.cssText += `
+			color: ${state === 'success' ? '#2196F3' : '#f44336'} !important;
+			font-weight: bold !important;
+			transition: all 0.3s ease !important;
+		`;
+	});
+
+	// Remove highlight after delay
+	setTimeout(() => {
+		removeHighlight(element);
+		labels.forEach(removeHighlight);
+	}, 3000);
+}
+
+// Add this helper function to remove highlights
+function removeHighlight(element) {
+	if (element && element.dataset.originalStyle !== undefined) {
+		element.style.cssText = element.dataset.originalStyle;
+		delete element.dataset.originalStyle;
+	}
+}

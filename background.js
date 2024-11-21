@@ -14,7 +14,7 @@ function debugLog(message, data = null) {
 
 	// Format for any other listeners
 	const timestamp = new Date().toISOString();
-	const logMessage = data 
+	const logMessage = data
 		? `${timestamp} - ${message}\n${JSON.stringify(data, null, 2)}`
 		: `${timestamp} - ${message}`;
 
@@ -49,7 +49,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		console.log('Settings update received:', {
 			hasApiKey: !!request.apiKey,
 			hasInstructions: !!request.additionalInstructions,
-			instructions: request.additionalInstructions
+			instructions: request.additionalInstructions,
 		});
 		OPENAI_API_KEY = request.apiKey;
 		ADDITIONAL_INSTRUCTIONS = request.additionalInstructions;
@@ -66,20 +66,23 @@ async function checkStorage() {
 }
 
 // Update the initial load
-chrome.storage.sync.get(['openaiApiKey', 'additionalInstructions'], async (result) => {
-	console.log('Initial load of settings:', {
-		hasApiKey: !!result.openaiApiKey,
-		hasInstructions: !!result.additionalInstructions,
-		instructions: result.additionalInstructions
-	});
-	
-	// Check all storage contents
-	const allStorage = await checkStorage();
-	console.log('All storage at initialization:', allStorage);
-	
-	OPENAI_API_KEY = result.openaiApiKey;
-	ADDITIONAL_INSTRUCTIONS = result.additionalInstructions;
-});
+chrome.storage.sync.get(
+	['openaiApiKey', 'additionalInstructions'],
+	async (result) => {
+		console.log('Initial load of settings:', {
+			hasApiKey: !!result.openaiApiKey,
+			hasInstructions: !!result.additionalInstructions,
+			instructions: result.additionalInstructions,
+		});
+
+		// Check all storage contents
+		const allStorage = await checkStorage();
+		console.log('All storage at initialization:', allStorage);
+
+		OPENAI_API_KEY = result.openaiApiKey;
+		ADDITIONAL_INSTRUCTIONS = result.additionalInstructions;
+	}
+);
 
 // Add at the top of background.js, right after the variable declarations
 chrome.commands.onCommand.addListener(async (command) => {
@@ -115,7 +118,7 @@ async function handleIntelligentPaste(
 		clipboardTextLength: clipboardText?.length,
 		formFieldsCount: formFields?.length,
 		hasImage: !!imageBase64,
-		imageSize: imageBase64?.length
+		imageSize: imageBase64?.length,
 	});
 
 	try {
@@ -127,16 +130,19 @@ async function handleIntelligentPaste(
 		if (!OPENAI_API_KEY || ADDITIONAL_INSTRUCTIONS === null) {
 			console.log('Fetching settings because:', {
 				apiKeyMissing: !OPENAI_API_KEY,
-				instructionsMissing: ADDITIONAL_INSTRUCTIONS === null
+				instructionsMissing: ADDITIONAL_INSTRUCTIONS === null,
 			});
-			
-			const result = await chrome.storage.sync.get(['openaiApiKey', 'additionalPrompt']);
+
+			const result = await chrome.storage.sync.get([
+				'openaiApiKey',
+				'additionalPrompt',
+			]);
 			console.log('Fetched settings:', {
 				hasApiKey: !!result.openaiApiKey,
 				hasInstructions: !!result.additionalPrompt,
-				instructions: result.additionalPrompt
+				instructions: result.additionalPrompt,
 			});
-			
+
 			OPENAI_API_KEY = result.openaiApiKey;
 			ADDITIONAL_INSTRUCTIONS = result.additionalPrompt;
 		}
@@ -146,7 +152,8 @@ async function handleIntelligentPaste(
 		console.log('Direct storage check for instructions:', directCheck);
 
 		// Use the most recent value
-		const effectiveInstructions = directCheck.additionalPrompt || ADDITIONAL_INSTRUCTIONS;
+		const effectiveInstructions =
+			directCheck.additionalPrompt || ADDITIONAL_INSTRUCTIONS;
 		console.log('Using instructions:', effectiveInstructions);
 
 		console.log('Using Additional Instructions:', effectiveInstructions);
@@ -171,7 +178,8 @@ async function handleIntelligentPaste(
 		const messages = [
 			{
 				role: 'system',
-				content: "You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.",
+				content:
+					"You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.",
 			},
 		];
 
@@ -188,7 +196,9 @@ async function handleIntelligentPaste(
 				content: [
 					{
 						type: 'text',
-						text: `${effectiveInstructions ? effectiveInstructions + '\n\n' : ''}Extract information from this image and respond with ONLY a raw JSON object in this exact format:
+						text: `${
+							effectiveInstructions ? effectiveInstructions + '\n\n' : ''
+						}Extract information from this image and respond with ONLY a raw JSON object in this exact format:
 {
     "mappings": {
         // Use ONLY these field IDs: ${availableFields.join(', ')}
@@ -210,7 +220,7 @@ The index should be 0-100, where:
 Available form fields:
 ${JSON.stringify(formFields, null, 2)}
 
-Remember: Return ONLY the JSON object, no markdown, no code blocks, no explanations.`
+Remember: Return ONLY the JSON object, no markdown, no code blocks, no explanations.`,
 					},
 					{
 						type: 'image_url',
@@ -228,22 +238,42 @@ Remember: Return ONLY the JSON object, no markdown, no code blocks, no explanati
 				.filter(Boolean);
 			console.log('Available fields:', availableFields);
 
-			let userPrompt = `${effectiveInstructions ? effectiveInstructions + '\n\n' : ''}Analyze this text content and extract ALL information:`;
+			let userPrompt = `${
+				effectiveInstructions ? effectiveInstructions + '\n\n' : ''
+			}Analyze this text content and extract ALL information. For select fields, use ONLY the available options provided:`;
 
 			messages.push({
 				role: 'user',
-					content: userPrompt + `
+				content:
+					userPrompt +
+					`
 
 Text content to analyze:
 ${clipboardText}
 
 Available form fields:
-${JSON.stringify(formFields, null, 2)}
+${JSON.stringify(
+	formFields.map((field) => ({
+		...field,
+		availableOptions:
+			field.type === 'select'
+				? `\nAvailable options: ${field.options
+						.map((opt) => `"${opt.text}" (value: "${opt.value}")`)
+						.join(', ')}`
+				: '',
+	})),
+	null,
+	2
+)}
 
 Return a JSON object with indexed mappings and unmapped data:
 {
     "mappings": {
-        // Use ONLY these field IDs: ${availableFields.join(', ')}
+        // Use ONLY these field IDs: ${formFields
+					.map((f) => f.id || f.name)
+					.filter(Boolean)
+					.join(', ')}
+        // For select fields, use ONLY the provided options
         // Include an index (0-100) for each mapping to indicate relevance
         "fieldId": { "value": "extracted value", "index": 90 }
     },
@@ -257,7 +287,9 @@ The index should be 0-100, where:
 - 90-100: Direct, exact matches or critical form information
 - 70-89: Highly relevant but not exact matches
 - 40-69: Potentially useful related information
-- 0-39: Contextual or supplementary information`
+- 0-39: Contextual or supplementary information
+
+For select fields, ensure the value matches one of the available options exactly.`,
 			});
 		}
 
@@ -274,7 +306,7 @@ The index should be 0-100, where:
 		console.log('Method: POST');
 		console.log('Headers:', {
 			'Content-Type': 'application/json',
-			'Authorization': 'Bearer sk-....' + OPENAI_API_KEY.slice(-4)
+			Authorization: 'Bearer sk-....' + OPENAI_API_KEY.slice(-4),
 		});
 		console.log('Request Body:', JSON.stringify(requestBody, null, 2));
 		console.groupEnd();
@@ -283,7 +315,7 @@ The index should be 0-100, where:
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				'Authorization': `Bearer ${OPENAI_API_KEY}`,
+				Authorization: `Bearer ${OPENAI_API_KEY}`,
 			},
 			body: JSON.stringify(requestBody),
 		});
@@ -333,19 +365,22 @@ The index should be 0-100, where:
 
 		console.group('Request Summary');
 		console.log('Total Tokens Used:', data.usage.total_tokens);
-		console.log('Cost Estimate:', `$${((data.usage.total_tokens / 1000) * 0.01).toFixed(4)}`);
+		console.log(
+			'Cost Estimate:',
+			`$${((data.usage.total_tokens / 1000) * 0.01).toFixed(4)}`
+		);
 		console.log('Processing Time:', `${Date.now() - startTime}ms`);
 		console.groupEnd();
 
 		return {
 			mappings: mappings.mappings || mappings,
-				unmappedData: mappings.unmappedData || {},
-				cost: {
-					total: (data.usage.total_tokens / 1000) * 0.01,
-					inputTokens: data.usage.prompt_tokens,
-					outputTokens: data.usage.completion_tokens,
-					imageCount: imageBase64 ? 1 : 0,
-				},
+			unmappedData: mappings.unmappedData || {},
+			cost: {
+				total: (data.usage.total_tokens / 1000) * 0.01,
+				inputTokens: data.usage.prompt_tokens,
+				outputTokens: data.usage.completion_tokens,
+				imageCount: imageBase64 ? 1 : 0,
+			},
 		};
 	} catch (error) {
 		console.error('Error in handleIntelligentPaste:', error);
