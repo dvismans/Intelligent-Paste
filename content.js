@@ -103,10 +103,12 @@ function debugLog(message, data = null) {
 	console.log(logMessage);
 }
 
-// Global variables at the top
+// Keep these declarations at the top
 let isProcessingPaste = false;
 let currentFloatingWindow = null;
 let lastFocusedElement = null;
+let lastFocusedTextElement = null;
+let lastFocusedElementValue = null;
 
 // Update the message listener
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -778,7 +780,7 @@ function createContentItem(
 	// Action buttons container (floating)
 	const actions = document.createElement('div');
 	actions.className = 'action-container';
-	actions.dataset.value = value; // Store value for insert button updates
+	actions.dataset.value = value;
 	actions.style.cssText = `
         position: absolute;
         top: 0;
@@ -802,28 +804,63 @@ function createContentItem(
 	});
 	actions.appendChild(copyButton);
 
-	// Insert button will be added/removed by updateInsertButtons
-	if (lastFocusedElement && isValidFormField(lastFocusedElement)) {
-		const insertButton = createActionButton('Insert', () => {
-			insertValueIntoField(lastFocusedElement, value);
-			showFeedback(item, 'Inserted!');
-		});
-		insertButton.className = 'insert-button';
+	// Create insert button if we have a focused field
+	const createInsertButton = () => {
+		// Use the text input field if available, otherwise use the last focused field
+		const targetElement = lastFocusedTextElement || lastFocusedElement;
+
+		if (targetElement && isValidFormField(targetElement)) {
+			const insertButton = createActionButton('Insert', () => {
+				// Get the current focused element at click time
+				const currentFocused = document.activeElement;
+				const targetToUse = lastFocusedTextElement || currentFocused;
+
+				debugLog('Insert clicked:', {
+					lastFocusedText: lastFocusedTextElement?.tagName,
+					currentFocused: currentFocused?.tagName,
+					targetToUse: targetToUse?.tagName,
+				});
+
+				if (targetToUse && isValidFormField(targetToUse)) {
+					insertValueIntoField(targetToUse, value);
+					showFeedback(item, 'Inserted!');
+				} else {
+					debugLog('No valid target field found');
+					showFeedback(item, 'Please click a text field first', 'error');
+				}
+			});
+			insertButton.className = 'insert-button';
+			return insertButton;
+		}
+		return null;
+	};
+
+	// Initial insert button if needed
+	const insertButton = createInsertButton();
+	if (insertButton) {
 		actions.appendChild(insertButton);
 	}
 
-	item.appendChild(contentContainer);
-	item.appendChild(actions);
-
-	// Show/hide actions on hover
+	// Update insert button visibility on hover
 	item.addEventListener('mouseenter', () => {
+		const existingInsertButton = actions.querySelector('.insert-button');
+		if (!existingInsertButton) {
+			const newInsertButton = createInsertButton();
+			if (newInsertButton) {
+				actions.appendChild(newInsertButton);
+			}
+		}
 		actions.style.opacity = '1';
 		item.style.backgroundColor = isMapped ? '#e3f2fd' : '#eee';
 	});
+
 	item.addEventListener('mouseleave', () => {
 		actions.style.opacity = '0';
 		item.style.backgroundColor = isMapped ? '#f3f9ff' : '#f5f5f5';
 	});
+
+	item.appendChild(contentContainer);
+	item.appendChild(actions);
 
 	parent.appendChild(item);
 	return item;
@@ -896,75 +933,149 @@ function getConfidenceColor(confidence) {
 	return '#757575';
 }
 
-// Helper function to insert value into field
-function insertValueIntoField(field, value) {
-	debugLog('Attempting to insert value:', { field, value });
-
-	if (!field) {
-		debugLog('Error: No field provided for insertion');
+// Update the focus tracking event listeners
+document.addEventListener('focusin', (e) => {
+	if (e.target.tagName === 'BUTTON' || !isValidFormField(e.target)) {
 		return;
 	}
 
-	if (!isValidFormField(field)) {
-		debugLog('Error: Invalid form field:', field);
-		return;
+	lastFocusedElement = e.target;
+
+	// Track text/textarea fields separately
+	if (isTextInputField(e.target)) {
+		lastFocusedTextElement = e.target;
+	}
+
+	debugLog('Element focused:', {
+		tagName: e.target.tagName,
+		type: e.target.type,
+		id: e.target.id,
+		name: e.target.name,
+		className: e.target.className,
+		isFocused: document.activeElement === e.target,
+		isTextInput: isTextInputField(e.target),
+	});
+
+	// Update insert buttons immediately
+	if (currentFloatingWindow) {
+		updateInsertButtons();
+	}
+});
+
+// Add helper function to check if element is a text input
+function isTextInputField(element) {
+	return (
+		element &&
+		(element.tagName === 'TEXTAREA' ||
+			(element.tagName === 'INPUT' &&
+				(element.type === 'text' ||
+					element.type === 'search' ||
+					element.type === 'url' ||
+					element.type === 'tel' ||
+					element.type === 'email' ||
+					!element.type)) || // Defaults to text
+			element.isContentEditable ||
+			element.getAttribute('contenteditable') === 'true')
+	);
+}
+
+// Update the insertValueIntoField function
+function insertValueIntoField(field, value) {
+	debugLog('Attempting to insert value:', {
+		field: {
+			tagName: field.tagName,
+			type: field.type,
+			id: field.id,
+			name: field.name,
+			isFocused: document.activeElement === field,
+		},
+		value,
+	});
+
+	if (!field || !field.isConnected) {
+		debugLog('Error: Invalid or disconnected field');
+		return false;
 	}
 
 	try {
-		// Store original value for comparison
-		const originalValue = getElementValue(field);
-		debugLog('Original value:', originalValue);
-
-		// First focus the field
-		field.focus();
-
-		if (field.tagName === 'SELECT') {
-			const options = Array.from(field.options);
-			const matchingOption = options.find(
-				(opt) =>
-					opt.text.toLowerCase().includes(value.toString().toLowerCase()) ||
-					opt.value.toLowerCase().includes(value.toString().toLowerCase())
-			);
-			if (matchingOption) {
-				field.value = matchingOption.value;
+		// Ensure field has focus
+		if (document.activeElement !== field) {
+			field.focus();
+			// Verify focus was gained
+			if (document.activeElement !== field) {
+				debugLog('Error: Could not focus field');
+				return false;
 			}
-		} else if (
-			field.isContentEditable ||
-			field.getAttribute('contenteditable') === 'true'
-		) {
-			field.textContent = value.toString();
+		}
+
+		// Set the value based on field type
+		if (field.tagName === 'TEXTAREA') {
+			const start = field.selectionStart;
+			const end = field.selectionEnd;
+			const currentValue = field.value;
+
+			if (typeof start === 'number' && typeof end === 'number') {
+				field.value =
+					currentValue.substring(0, start) +
+					value +
+					currentValue.substring(end);
+				field.selectionStart = field.selectionEnd = start + value.length;
+			} else {
+				field.value = value;
+			}
 		} else {
 			field.value = value.toString();
 		}
 
-		// Trigger all relevant events
-		['input', 'change', 'blur'].forEach((eventType) => {
+		// Trigger events
+		['input', 'change'].forEach((eventType) => {
 			field.dispatchEvent(new Event(eventType, { bubbles: true }));
 		});
 
-		// Verify the value was actually set
-		const newValue = getElementValue(field);
-		debugLog('New value after insertion:', newValue);
+		// Keep focus on the field
+		field.focus();
 
-		if (newValue === value.toString()) {
-			debugLog('Value inserted successfully');
-			if (field.isConnected) {
-				// Check if element is still in the DOM
-				highlightField(field, 'success');
-			}
-		} else {
-			debugLog('Value verification failed');
-			if (field.isConnected) {
-				highlightField(field, 'error');
-			}
-		}
+		debugLog('Value inserted successfully:', {
+			newValue: field.value,
+			isFocused: document.activeElement === field,
+		});
+
+		highlightField(field, 'success');
+		return true;
 	} catch (error) {
 		debugLog('Error inserting value:', error);
-		// Only try to highlight if the field is still valid and in the DOM
-		if (field && field.isConnected) {
-			highlightField(field, 'error');
-		}
+		highlightField(field, 'error');
+		return false;
 	}
+}
+
+// Update validateElementValue function
+function validateElementValue(element, expectedValue) {
+	const currentValue = getElementValue(element);
+
+	// Handle empty values
+	if (!currentValue && expectedValue) {
+		return false;
+	}
+
+	// For select elements, check both value and text
+	if (element.tagName === 'SELECT') {
+		return (
+			element.value &&
+			(element.value
+				.toLowerCase()
+				.includes(expectedValue.toString().toLowerCase()) ||
+				element.options[element.selectedIndex]?.text
+					.toLowerCase()
+					.includes(expectedValue.toString().toLowerCase()))
+		);
+	}
+
+	// For other elements, do a direct comparison
+	return (
+		currentValue.toString().toLowerCase() ===
+		expectedValue.toString().toLowerCase()
+	);
 }
 
 // Update the handlePaste function to check for cancellation
@@ -1721,15 +1832,23 @@ document.addEventListener('focusin', (e) => {
 	}
 
 	lastFocusedElement = e.target;
+
+	// Track text/textarea fields separately
+	if (isTextInputField(e.target)) {
+		lastFocusedTextElement = e.target;
+	}
+
 	debugLog('Element focused:', {
 		tagName: e.target.tagName,
 		type: e.target.type,
 		id: e.target.id,
 		name: e.target.name,
 		className: e.target.className,
+		isFocused: document.activeElement === e.target,
+		isTextInput: isTextInputField(e.target),
 	});
 
-	// Update insert buttons in floating window if it exists
+	// Update insert buttons immediately
 	if (currentFloatingWindow) {
 		updateInsertButtons();
 	}
@@ -1755,17 +1874,25 @@ document.addEventListener('focusout', (e) => {
 
 // Add this function to update insert buttons
 function updateInsertButtons() {
+	if (!currentFloatingWindow) return;
+
 	const actionContainers =
 		currentFloatingWindow.querySelectorAll('.action-container');
+	const targetElement = lastFocusedTextElement || lastFocusedElement;
+
 	actionContainers.forEach((container) => {
 		const existingInsertButton = container.querySelector('.insert-button');
 		const value = container.dataset.value;
 
-		if (lastFocusedElement && isValidFormField(lastFocusedElement)) {
+		if (targetElement && isValidFormField(targetElement)) {
 			if (!existingInsertButton) {
 				const insertButton = createActionButton('Insert', () => {
-					insertValueIntoField(lastFocusedElement, value);
-					showFeedback(container.parentElement, 'Inserted!');
+					const currentTarget =
+						lastFocusedTextElement || document.activeElement;
+					if (currentTarget && currentTarget.isConnected) {
+						insertValueIntoField(currentTarget, value);
+						showFeedback(container.parentElement, 'Inserted!');
+					}
 				});
 				insertButton.className = 'insert-button';
 				container.appendChild(insertButton);
