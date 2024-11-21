@@ -777,6 +777,8 @@ function createContentItem(
 
 	// Action buttons container (floating)
 	const actions = document.createElement('div');
+	actions.className = 'action-container';
+	actions.dataset.value = value; // Store value for insert button updates
 	actions.style.cssText = `
         position: absolute;
         top: 0;
@@ -800,12 +802,13 @@ function createContentItem(
 	});
 	actions.appendChild(copyButton);
 
-	// Insert button (only show when a form field is focused)
+	// Insert button will be added/removed by updateInsertButtons
 	if (lastFocusedElement && isValidFormField(lastFocusedElement)) {
 		const insertButton = createActionButton('Insert', () => {
 			insertValueIntoField(lastFocusedElement, value);
 			showFeedback(item, 'Inserted!');
 		});
+		insertButton.className = 'insert-button';
 		actions.appendChild(insertButton);
 	}
 
@@ -826,7 +829,7 @@ function createContentItem(
 	return item;
 }
 
-// Helper function to create action buttons
+// Update createActionButton function
 function createActionButton(text, onClick) {
 	const button = document.createElement('button');
 	button.style.cssText = `
@@ -841,10 +844,18 @@ function createActionButton(text, onClick) {
         white-space: nowrap;
     `;
 	button.textContent = text;
+	button.type = 'button'; // Prevent form submission
 	button.onclick = (e) => {
-		e.stopPropagation();
+		e.preventDefault(); // Prevent any default behavior
+		e.stopPropagation(); // Stop event bubbling
 		onClick();
 	};
+
+	// Prevent focus tracking on the button itself
+	button.addEventListener('focus', (e) => {
+		e.stopPropagation();
+	});
+
 	return button;
 }
 
@@ -887,35 +898,73 @@ function getConfidenceColor(confidence) {
 
 // Helper function to insert value into field
 function insertValueIntoField(field, value) {
-	if (field.tagName === 'SELECT') {
-		const options = Array.from(field.options);
-		const matchingOption = options.find(
-			(opt) =>
-				opt.text.toLowerCase().includes(value.toLowerCase()) ||
-				opt.value.toLowerCase().includes(value.toLowerCase())
-		);
-		if (matchingOption) {
-			field.value = matchingOption.value;
-		}
-	} else if (
-		field.isContentEditable ||
-		field.getAttribute('contenteditable') === 'true'
-	) {
-		field.textContent = value;
-	} else {
-		field.value = value;
+	debugLog('Attempting to insert value:', { field, value });
+
+	if (!field) {
+		debugLog('Error: No field provided for insertion');
+		return;
 	}
 
-	// Trigger change events
-	field.dispatchEvent(new Event('input', { bubbles: true }));
-	field.dispatchEvent(new Event('change', { bubbles: true }));
+	if (!isValidFormField(field)) {
+		debugLog('Error: Invalid form field:', field);
+		return;
+	}
 
-	// Visual feedback
-	const originalBackground = field.style.backgroundColor;
-	field.style.backgroundColor = '#e3f2fd';
-	setTimeout(() => {
-		field.style.backgroundColor = originalBackground;
-	}, 500);
+	try {
+		// Store original value for comparison
+		const originalValue = getElementValue(field);
+		debugLog('Original value:', originalValue);
+
+		// First focus the field
+		field.focus();
+
+		if (field.tagName === 'SELECT') {
+			const options = Array.from(field.options);
+			const matchingOption = options.find(
+				(opt) =>
+					opt.text.toLowerCase().includes(value.toString().toLowerCase()) ||
+					opt.value.toLowerCase().includes(value.toString().toLowerCase())
+			);
+			if (matchingOption) {
+				field.value = matchingOption.value;
+			}
+		} else if (
+			field.isContentEditable ||
+			field.getAttribute('contenteditable') === 'true'
+		) {
+			field.textContent = value.toString();
+		} else {
+			field.value = value.toString();
+		}
+
+		// Trigger all relevant events
+		['input', 'change', 'blur'].forEach((eventType) => {
+			field.dispatchEvent(new Event(eventType, { bubbles: true }));
+		});
+
+		// Verify the value was actually set
+		const newValue = getElementValue(field);
+		debugLog('New value after insertion:', newValue);
+
+		if (newValue === value.toString()) {
+			debugLog('Value inserted successfully');
+			if (field.isConnected) {
+				// Check if element is still in the DOM
+				highlightField(field, 'success');
+			}
+		} else {
+			debugLog('Value verification failed');
+			if (field.isConnected) {
+				highlightField(field, 'error');
+			}
+		}
+	} catch (error) {
+		debugLog('Error inserting value:', error);
+		// Only try to highlight if the field is still valid and in the DOM
+		if (field && field.isConnected) {
+			highlightField(field, 'error');
+		}
+	}
 }
 
 // Update the handlePaste function to check for cancellation
@@ -1664,31 +1713,93 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	}
 });
 
-// Add event listeners for focus tracking
+// Update focus tracking
 document.addEventListener('focusin', (e) => {
+	// Ignore buttons and non-form elements
+	if (e.target.tagName === 'BUTTON' || !isValidFormField(e.target)) {
+		return;
+	}
+
 	lastFocusedElement = e.target;
 	debugLog('Element focused:', {
 		tagName: e.target.tagName,
 		type: e.target.type,
 		id: e.target.id,
+		name: e.target.name,
 		className: e.target.className,
 	});
+
+	// Update insert buttons in floating window if it exists
+	if (currentFloatingWindow) {
+		updateInsertButtons();
+	}
 });
+
+document.addEventListener('focusout', (e) => {
+	// Ignore buttons and non-form elements
+	if (e.target.tagName === 'BUTTON' || !isValidFormField(e.target)) {
+		return;
+	}
+
+	// Small delay to allow new focus to be set
+	setTimeout(() => {
+		// Only clear lastFocusedElement if we're not focusing another valid form field
+		if (!isValidFormField(document.activeElement)) {
+			lastFocusedElement = null;
+			if (currentFloatingWindow) {
+				updateInsertButtons();
+			}
+		}
+	}, 100);
+});
+
+// Add this function to update insert buttons
+function updateInsertButtons() {
+	const actionContainers =
+		currentFloatingWindow.querySelectorAll('.action-container');
+	actionContainers.forEach((container) => {
+		const existingInsertButton = container.querySelector('.insert-button');
+		const value = container.dataset.value;
+
+		if (lastFocusedElement && isValidFormField(lastFocusedElement)) {
+			if (!existingInsertButton) {
+				const insertButton = createActionButton('Insert', () => {
+					insertValueIntoField(lastFocusedElement, value);
+					showFeedback(container.parentElement, 'Inserted!');
+				});
+				insertButton.className = 'insert-button';
+				container.appendChild(insertButton);
+			}
+		} else if (existingInsertButton) {
+			existingInsertButton.remove();
+		}
+	});
+}
 
 // Helper function to sort by index
 function sortByIndex(a, b) {
 	return (b.index || 0) - (a.index || 0);
 }
 
-// Helper function to check if an element is a valid form field
+// Update isValidFormField to explicitly exclude buttons
 function isValidFormField(element) {
+	if (!element || !element.tagName) return false;
+
+	// Explicitly exclude buttons
+	if (
+		element.tagName === 'BUTTON' ||
+		(element.tagName === 'INPUT' && element.type === 'button') ||
+		(element.tagName === 'INPUT' && element.type === 'submit')
+	) {
+		return false;
+	}
+
 	return (
-		element.tagName &&
-		(element.tagName === 'INPUT' ||
-			element.tagName === 'TEXTAREA' ||
-			element.tagName === 'SELECT' ||
-			element.isContentEditable ||
-			element.getAttribute('contenteditable') === 'true')
+		element.tagName === 'INPUT' ||
+		element.tagName === 'TEXTAREA' ||
+		element.tagName === 'SELECT' ||
+		element.isContentEditable ||
+		element.getAttribute('contenteditable') === 'true'
 	);
 }
 
@@ -1791,51 +1902,73 @@ const selectorStrategies = [
 
 // Add this function for field highlighting
 function highlightField(element, state = 'success') {
-	// Save original styles if not already saved
-	if (!element.dataset.originalStyle) {
-		element.dataset.originalStyle = element.style.cssText;
+	if (!element || !element.isConnected) {
+		debugLog('Cannot highlight field: element is null or not in DOM');
+		return;
 	}
 
-	const successStyle = `
-		background-color: rgba(33, 150, 243, 0.05) !important;
-		border-color: #2196F3 !important;
-		box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.2) !important;
-		transition: all 0.3s ease !important;
-	`;
-
-	const errorStyle = `
-		background-color: rgba(244, 67, 54, 0.05) !important;
-		border-color: #f44336 !important;
-		box-shadow: 0 0 0 1px rgba(244, 67, 54, 0.2) !important;
-		transition: all 0.3s ease !important;
-	`;
-
-	// Apply new styles
-	element.style.cssText += state === 'success' ? successStyle : errorStyle;
-
-	// Find and highlight associated labels
-	const labels = [
-		...Array.from(document.querySelectorAll(`label[for="${element.id}"]`)),
-		element.closest('label'),
-		element.parentElement?.querySelector('label'),
-	].filter(Boolean);
-
-	labels.forEach((label) => {
-		if (!label.dataset.originalStyle) {
-			label.dataset.originalStyle = label.style.cssText;
+	try {
+		// Save original styles if not already saved
+		if (!element.dataset) {
+			debugLog('Element does not support dataset, skipping highlight');
+			return;
 		}
-		label.style.cssText += `
-			color: ${state === 'success' ? '#2196F3' : '#f44336'} !important;
-			font-weight: bold !important;
+
+		if (!element.dataset.originalStyle) {
+			element.dataset.originalStyle = element.style.cssText;
+		}
+
+		const successStyle = `
+			background-color: rgba(33, 150, 243, 0.05) !important;
+			border-color: #2196F3 !important;
+			box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.2) !important;
 			transition: all 0.3s ease !important;
 		`;
-	});
 
-	// Remove highlight after delay
-	setTimeout(() => {
-		removeHighlight(element);
-		labels.forEach(removeHighlight);
-	}, 3000);
+		const errorStyle = `
+			background-color: rgba(244, 67, 54, 0.05) !important;
+			border-color: #f44336 !important;
+			box-shadow: 0 0 0 1px rgba(244, 67, 54, 0.2) !important;
+			transition: all 0.3s ease !important;
+		`;
+
+		// Apply new styles
+		element.style.cssText += state === 'success' ? successStyle : errorStyle;
+
+		// Find and highlight associated labels
+		const labels = [
+			...Array.from(document.querySelectorAll(`label[for="${element.id}"]`)),
+			element.closest('label'),
+			element.parentElement?.querySelector('label'),
+		].filter(Boolean);
+
+		labels.forEach((label) => {
+			if (label.isConnected && label.dataset) {
+				if (!label.dataset.originalStyle) {
+					label.dataset.originalStyle = label.style.cssText;
+				}
+				label.style.cssText += `
+					color: ${state === 'success' ? '#2196F3' : '#f44336'} !important;
+					font-weight: bold !important;
+					transition: all 0.3s ease !important;
+				`;
+			}
+		});
+
+		// Remove highlight after delay
+		setTimeout(() => {
+			if (element.isConnected) {
+				removeHighlight(element);
+				labels.forEach((label) => {
+					if (label.isConnected) {
+						removeHighlight(label);
+					}
+				});
+			}
+		}, 3000);
+	} catch (error) {
+		debugLog('Error in highlightField:', error);
+	}
 }
 
 // Add this helper function to remove highlights
