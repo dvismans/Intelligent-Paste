@@ -1329,161 +1329,203 @@ function showNotification(message, type) {
 // Update fillFormFields function to properly handle the new response format
 function fillFormFields(mappings) {
 	debugLog('Attempting to fill fields with mappings:', mappings);
-
-	// Keep track of filled fields for cleanup
 	const filledFields = [];
-
-	// Ensure mappings is not wrapped in another object
 	const actualMappings = mappings.mappings || mappings;
+	const results = {
+		successful: [],
+		failed: [],
+	};
 
-	Object.entries(actualMappings).forEach(([fieldId, mapping]) => {
-		// Extract the value from the mapping object
+	Object.entries(actualMappings).forEach(([fieldIdentifier, mapping]) => {
 		const value =
 			typeof mapping === 'object' && mapping.value !== undefined
 				? mapping.value
 				: mapping;
 
-		debugLog(`Trying to fill field "${fieldId}" with value:`, value);
+		debugLog(`Trying to fill field "${fieldIdentifier}" with value:`, value);
+		let element = null;
 
-		// Try to find the field using multiple selectors
-		const element =
-			document.getElementById(fieldId) ||
-			document.getElementsByName(fieldId)[0] ||
-			document.querySelector(`[data-field="${fieldId}"]`) ||
-			document.querySelector(`[data-test-id="${fieldId}"]`) ||
-			document.querySelector(`input[name="${fieldId}"]`) ||
-			document.querySelector(`[data-name="${fieldId}"]`) ||
-			document.querySelector(`[aria-label="${fieldId}"]`);
+		// Existing selector strategies...
+		for (const strategy of selectorStrategies) {
+			element = strategy(fieldIdentifier);
+			if (element) break;
+		}
 
 		if (element) {
-			debugLog(`Found element for "${fieldId}":`, {
-				tagName: element.tagName,
-				type: element.type,
-				currentValue: element.value,
-			});
+			try {
+				// Store original value for comparison
+				const originalValue = element.value;
 
-			// Special handling for phone fields
-			if (fieldId === 'phone' || element.type === 'tel') {
-				const cleanPhone = value.toString().replace(/[^0-9+]/g, '');
-				element.value = cleanPhone;
-			} else {
-				element.value = value.toString();
+				// Fill the field based on type
+				if (
+					fieldIdentifier.toLowerCase().includes('phone') ||
+					element.type === 'tel'
+				) {
+					const cleanPhone = value.toString().replace(/[^0-9+]/g, '');
+					element.value = cleanPhone;
+				} else if (element.type === 'date') {
+					try {
+						const date = new Date(value);
+						if (!isNaN(date)) {
+							element.value = date.toISOString().split('T')[0];
+						} else {
+							element.value = value.toString();
+						}
+					} catch {
+						element.value = value.toString();
+					}
+				} else if (element.tagName === 'SELECT') {
+					const options = Array.from(element.options);
+					const matchingOption = options.find(
+						(opt) =>
+							opt.text.toLowerCase().includes(value.toString().toLowerCase()) ||
+							opt.value.toLowerCase().includes(value.toString().toLowerCase())
+					);
+					if (matchingOption) {
+						element.value = matchingOption.value;
+					} else {
+						element.value = value.toString();
+					}
+				} else {
+					element.value = value.toString();
+				}
+
+				// Trigger events
+				['focus', 'input', 'change', 'blur'].forEach((eventType) => {
+					element.dispatchEvent(new Event(eventType, { bubbles: true }));
+				});
+
+				// Validate the field was actually filled
+				setTimeout(() => {
+					const currentValue = element.value;
+					const expectedValue =
+						element.tagName === 'SELECT'
+							? element.options[element.selectedIndex]?.text
+							: value.toString();
+
+					const valueMatches =
+						element.tagName === 'SELECT'
+							? currentValue &&
+							  (currentValue
+									.toLowerCase()
+									.includes(value.toString().toLowerCase()) ||
+									element.options[element.selectedIndex]?.text
+										.toLowerCase()
+										.includes(value.toString().toLowerCase()))
+							: currentValue === value.toString();
+
+					if (valueMatches) {
+						debugLog(
+							`✅ Validated field "${fieldIdentifier}": Value set successfully`
+						);
+						results.successful.push({
+							field: fieldIdentifier,
+							value: currentValue,
+							element: element,
+						});
+						highlightField(element, 'success');
+					} else {
+						debugLog(`❌ Validation failed for "${fieldIdentifier}":`, {
+							expected: value,
+							actual: currentValue,
+							originalValue: originalValue,
+						});
+						results.failed.push({
+							field: fieldIdentifier,
+							expectedValue: value,
+							actualValue: currentValue,
+							element: element,
+						});
+						highlightField(element, 'error');
+					}
+				}, 100); // Small delay to ensure events are processed
+
+				filledFields.push(element);
+
+				// Handle labels
+				const labels = [
+					...Array.from(
+						document.querySelectorAll(`label[for="${element.id}"]`)
+					),
+					element.closest('label'),
+					element.parentElement?.querySelector('label'),
+					...Array.from(document.getElementsByTagName('label')).filter(
+						(label) =>
+							label.textContent
+								.toLowerCase()
+								.includes(fieldIdentifier.toLowerCase())
+					),
+				].filter(Boolean);
+
+				labels.forEach((label) => {
+					filledFields.push(label);
+				});
+			} catch (error) {
+				debugLog(`Error filling field "${fieldIdentifier}":`, error);
+				results.failed.push({
+					field: fieldIdentifier,
+					error: error.message,
+					element: element,
+				});
+				highlightField(element, 'error');
 			}
-
-			// Trigger all relevant events
-			['focus', 'input', 'change', 'blur'].forEach((eventType) => {
-				element.dispatchEvent(new Event(eventType, { bubbles: true }));
-			});
-
-			// Highlight the field and its label
-			highlightField(element);
-
-			// Also highlight any associated labels
-			const labels = [
-				...Array.from(document.querySelectorAll(`label[for="${element.id}"]`)),
-				element.closest('label'),
-				element.parentElement?.querySelector('label'),
-			].filter(Boolean);
-
-			labels.forEach((label) => {
-				label.style.cssText += commonStyles.filledLabel;
-				filledFields.push(label);
-			});
-
-			filledFields.push(element);
-			debugLog(`Successfully filled "${fieldId}" with value:`, value);
 		} else {
-			debugLog(
-				`Could not find element for "${fieldId}". Available fields:`,
-				Array.from(document.querySelectorAll('input, select, textarea')).map(
-					(input) => ({
-						id: input.id,
-						name: input.name,
-						type: input.type,
-						'data-field': input.getAttribute('data-field'),
-						'aria-label': input.getAttribute('aria-label'),
-					})
-				)
-			);
+			debugLog(`Could not find element for "${fieldIdentifier}"`);
+			results.failed.push({
+				field: fieldIdentifier,
+				error: 'Element not found',
+			});
 		}
 	});
 
-	debugLog(
-		`Filled ${filledFields.length} fields out of ${
-			Object.keys(actualMappings).length
-		} mappings`
-	);
+	// Update the final status message based on validation results
+	const successCount = results.successful.length;
+	const failCount = results.failed.length;
+	const totalFields = Object.keys(actualMappings).length;
 
-	// Remove highlights after 3 seconds
-	setTimeout(() => {
-		filledFields.forEach((element) => {
-			if (element.tagName === 'LABEL') {
-				element.style.cssText = element.dataset.originalStyle || '';
-			} else {
-				removeHighlight(element);
-			}
+	if (failCount > 0) {
+		debugLog(`⚠️ Form filling completed with issues:`, {
+			total: totalFields,
+			successful: successCount,
+			failed: failCount,
+			failedFields: results.failed,
 		});
-	}, 3000);
-}
-
-// Function to highlight a filled field
-function highlightField(element) {
-	// Save original styles
-	element.dataset.originalStyle = element.style.cssText;
-
-	// Add highlight styles to the field
-	element.style.cssText += commonStyles.filledField;
-
-	// Find and highlight the label if it exists
-	const label = findLabelForElement(element);
-	if (label) {
-		label.dataset.originalStyle = label.style.cssText;
-		label.style.cssText += commonStyles.filledLabel;
+		return {
+			success: false,
+			message: `Filled ${successCount} fields, ${failCount} failed`,
+			results: results,
+		};
+	} else {
+		debugLog(`✅ Form filling completed successfully:`, {
+			total: totalFields,
+			successful: successCount,
+		});
+		return {
+			success: true,
+			message: `Successfully filled ${successCount} fields`,
+			results: results,
+		};
 	}
 }
 
-// Function to remove highlight
-function removeHighlight(element) {
-	// Restore original styles with smooth transition
-	if (element.dataset.originalStyle !== undefined) {
-		element.style.cssText = element.dataset.originalStyle;
-		delete element.dataset.originalStyle;
-	}
+// Update highlightField function to handle success/error states
+function highlightField(element, state = 'success') {
+	const successStyle = `
+		background-color: rgba(33, 150, 243, 0.05) !important;
+		border-color: #2196F3 !important;
+		box-shadow: 0 0 0 1px rgba(33, 150, 243, 0.2) !important;
+	`;
 
-	// Remove highlight from label
-	const label = findLabelForElement(element);
-	if (label && label.dataset.originalStyle !== undefined) {
-		label.style.cssText = label.dataset.originalStyle;
-		delete label.dataset.originalStyle;
-	}
-}
+	const errorStyle = `
+		background-color: rgba(244, 67, 54, 0.05) !important;
+		border-color: #f44336 !important;
+		box-shadow: 0 0 0 1px rgba(244, 67, 54, 0.2) !important;
+	`;
 
-// Helper function to find label for an element
-function findLabelForElement(element) {
-	// Try to find label by for attribute
-	if (element.id) {
-		const label = document.querySelector(`label[for="${element.id}"]`);
-		if (label) return label;
-	}
-
-	// Try to find label as parent
-	let parent = element.parentElement;
-	while (parent) {
-		if (parent.tagName === 'LABEL') {
-			return parent;
-		}
-		parent = parent.parentElement;
-	}
-
-	// Try to find label as sibling
-	const siblings = element.parentElement?.children || [];
-	for (const sibling of siblings) {
-		if (sibling.tagName === 'LABEL') {
-			return sibling;
-		}
-	}
-
-	return null;
+	element.style.cssText += `
+		transition: all 0.3s ease !important;
+		${state === 'success' ? successStyle : errorStyle}
+	`;
 }
 
 // Update the keyboard shortcut handling
@@ -1676,3 +1718,42 @@ function makeWindowDraggable(container, handle) {
 		document.removeEventListener('mouseup', dragEnd);
 	};
 }
+
+// Add this before fillFormFields function
+const selectorStrategies = [
+	// Try ID first
+	(fieldIdentifier) => document.getElementById(fieldIdentifier),
+	// Try name attribute with different selectors
+	(fieldIdentifier) => document.querySelector(`[name="${fieldIdentifier}"]`),
+	(fieldIdentifier) =>
+		document.querySelector(`input[name="${fieldIdentifier}"]`),
+	(fieldIdentifier) =>
+		document.querySelector(`textarea[name="${fieldIdentifier}"]`),
+	(fieldIdentifier) =>
+		document.querySelector(`select[name="${fieldIdentifier}"]`),
+	// Try data attributes
+	(fieldIdentifier) =>
+		document.querySelector(`[data-field="${fieldIdentifier}"]`),
+	(fieldIdentifier) =>
+		document.querySelector(`[data-test-id="${fieldIdentifier}"]`),
+	(fieldIdentifier) =>
+		document.querySelector(`[data-name="${fieldIdentifier}"]`),
+	// Try aria label
+	(fieldIdentifier) =>
+		document.querySelector(`[aria-label="${fieldIdentifier}"]`),
+	// Try case-insensitive name match
+	(fieldIdentifier) =>
+		Array.from(document.getElementsByName(fieldIdentifier)).find(
+			(el) => el.name.toLowerCase() === fieldIdentifier.toLowerCase()
+		),
+	// Try partial matches on name attribute
+	(fieldIdentifier) => document.querySelector(`[name*="${fieldIdentifier}"]`),
+	// Try label text content
+	(fieldIdentifier) => {
+		const label = Array.from(document.getElementsByTagName('label')).find(
+			(label) =>
+				label.textContent.toLowerCase().includes(fieldIdentifier.toLowerCase())
+		);
+		return label?.control || label?.querySelector('input, textarea, select');
+	},
+];
