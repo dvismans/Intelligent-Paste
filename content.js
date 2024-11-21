@@ -97,7 +97,7 @@ async function testClipboardAccess(e) {
 // Update the debug logging function
 function debugLog(message, data = null) {
 	const timestamp = new Date().toISOString();
-	const logMessage = data 
+	const logMessage = data
 		? `${timestamp} - ${message} ${JSON.stringify(data, null, 2)}`
 		: `${timestamp} - ${message}`;
 	console.log(logMessage);
@@ -114,8 +114,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		// Get all form fields first
 		const formFields = getAllFormFields();
 		if (!formFields || formFields.length === 0) {
-				showNotification('No form fields found on page', 'error');
-				return;
+			showNotification('No form fields found on page', 'error');
+			return;
 		}
 
 		// Create synthetic paste event
@@ -184,7 +184,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	}
 });
 
-// Update the common styles object
+// Move commonStyles to the top of the file
 const commonStyles = {
 	backdrop: `
         position: fixed;
@@ -254,25 +254,6 @@ const commonStyles = {
         color: #2196F3 !important;
         font-weight: bold !important;
     `,
-	clipboardPreview: `
-        margin-top: 8px;
-        padding: 8px;
-        background: #f5f5f5;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 12px;
-        max-height: 100px;
-        overflow-y: auto;
-        white-space: pre-wrap;
-        word-break: break-word;
-    `,
-	clipboardImage: `
-        max-width: 100%;
-        max-height: 100px;
-        margin-top: 8px;
-        border-radius: 4px;
-        border: 1px solid #ddd;
-    `,
 	successIcon: `
         display: inline-block;
         width: 16px;
@@ -329,15 +310,14 @@ const commonStyles = {
         padding: 12px;
     `,
 	contentItem: `
-        margin-bottom: 8px;
+        margin-bottom: 4px;
         padding: 8px;
         background: #f5f5f5;
         border: 1px solid #eee;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: background-color 0.2s;
-        font-size: 13px;
-        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
     `,
 	copyIndicator: `
         position: absolute;
@@ -360,11 +340,40 @@ function createStepTracker() {
 	document.body.appendChild(backdrop);
 
 	const tracker = document.createElement('div');
-	tracker.style.cssText = commonStyles.popup + 'width: 300px;';
+	tracker.style.cssText = commonStyles.popup + 'width: 400px;';
 
 	const header = document.createElement('div');
-	header.style.cssText = commonStyles.header;
-	header.textContent = 'Intelligent Paste';
+	header.style.cssText =
+		commonStyles.header +
+		`
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    `;
+
+	const title = document.createElement('div');
+	title.textContent = 'Intelligent Paste';
+	title.style.fontWeight = 'bold';
+
+	const cancelButton = document.createElement('button');
+	cancelButton.textContent = '×';
+	cancelButton.style.cssText = `
+        background: none;
+        border: none;
+        color: #666;
+        font-size: 18px;
+        cursor: pointer;
+        padding: 4px 8px;
+    `;
+	cancelButton.onclick = () => {
+		window.intelligentPasteCancelled = true;
+		tracker.remove();
+		backdrop.remove();
+		showNotification('Processing cancelled', 'error');
+	};
+
+	header.appendChild(title);
+	header.appendChild(cancelButton);
 
 	const content = document.createElement('div');
 	content.style.cssText = commonStyles.content;
@@ -372,12 +381,108 @@ function createStepTracker() {
 	const status = document.createElement('div');
 	status.style.cssText = commonStyles.message;
 
-	const clipboardPreview = document.createElement('div');
-	clipboardPreview.style.display = 'none';
+	// Add clipboard content preview in a more compact way
+	const previewContainer = document.createElement('div');
+	previewContainer.style.cssText = `
+        margin: 8px 0;
+        position: relative;
+        background: #f8f9fa;
+        border-radius: 4px;
+        border: 1px solid #eee;
+    `;
+
+	const preview = document.createElement('div');
+	preview.style.cssText = `
+        padding: 8px;
+        font-size: 12px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 100px;
+        overflow-y: auto;
+        position: relative;
+    `;
+
+	// Add copy button that floats over the content
+	const copyButton = document.createElement('button');
+	copyButton.textContent = 'Copy';
+	copyButton.style.cssText = `
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        padding: 2px 6px;
+        background: rgba(33, 150, 243, 0.9);
+        color: white;
+        border: none;
+        border-radius: 3px;
+        font-size: 11px;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.2s;
+        z-index: 1;
+    `;
+	copyButton.onclick = async () => {
+		const text = preview.textContent;
+		await navigator.clipboard.writeText(text);
+		showFeedback(previewContainer, 'Copied!');
+	};
+
+	// Show/hide copy button on hover
+	previewContainer.addEventListener('mouseenter', () => {
+		copyButton.style.opacity = '1';
+	});
+	previewContainer.addEventListener('mouseleave', () => {
+		copyButton.style.opacity = '0';
+	});
+
+	previewContainer.appendChild(preview);
+	previewContainer.appendChild(copyButton);
+
+	// Add image preview with similar floating copy button
+	const imagePreview = document.createElement('div');
+	imagePreview.style.cssText = `
+        margin-top: 8px;
+        position: relative;
+        display: none;
+    `;
+
+	const img = document.createElement('img');
+	img.style.cssText = `
+        max-width: 100%;
+        max-height: 100px;
+        object-fit: contain;
+        border-radius: 4px;
+    `;
+
+	const imageCopyButton = document.createElement('button');
+	imageCopyButton.textContent = 'Copy Image';
+	imageCopyButton.style.cssText = copyButton.style.cssText;
+	imageCopyButton.onclick = async () => {
+		try {
+			const response = await fetch(img.src);
+			const blob = await response.blob();
+			await navigator.clipboard.write([
+				new ClipboardItem({ [blob.type]: blob }),
+			]);
+			showFeedback(imagePreview, 'Copied!');
+		} catch (error) {
+			showFeedback(imagePreview, 'Failed to copy', 'error');
+		}
+	};
+
+	imagePreview.appendChild(img);
+	imagePreview.appendChild(imageCopyButton);
+
+	// Show/hide image copy button on hover
+	imagePreview.addEventListener('mouseenter', () => {
+		imageCopyButton.style.opacity = '1';
+	});
+	imagePreview.addEventListener('mouseleave', () => {
+		imageCopyButton.style.opacity = '0';
+	});
 
 	const progressContainer = document.createElement('div');
-	progressContainer.style.cssText =
-		commonStyles.progressContainer + 'display: none;';
+	progressContainer.style.cssText = commonStyles.progressContainer;
 
 	const progressBar = document.createElement('div');
 	progressBar.style.cssText = commonStyles.progressBar;
@@ -389,7 +494,8 @@ function createStepTracker() {
 	progressContainer.appendChild(progressBar);
 
 	content.appendChild(status);
-	content.appendChild(clipboardPreview);
+	content.appendChild(previewContainer);
+	content.appendChild(imagePreview);
 	content.appendChild(progressContainer);
 
 	tracker.appendChild(header);
@@ -408,22 +514,18 @@ function createStepTracker() {
 			progress.style.width = `${percent}%`;
 		},
 		showClipboardContent: (text, image) => {
-			clipboardPreview.style.display = 'block';
-			clipboardPreview.innerHTML = '';
-
 			if (text) {
-				const textPreview = document.createElement('div');
-				textPreview.style.cssText = commonStyles.clipboardPreview;
-				textPreview.textContent =
-					text.length > 200 ? text.substring(0, 200) + '...' : text;
-				clipboardPreview.appendChild(textPreview);
+				preview.textContent =
+					text.length > 500 ? text.substring(0, 500) + '...' : text;
+				previewContainer.style.display = 'block';
+			} else {
+				previewContainer.style.display = 'none';
 			}
-
 			if (image) {
-				const img = document.createElement('img');
-				img.style.cssText = commonStyles.clipboardImage;
 				img.src = `data:image/png;base64,${image}`;
-				clipboardPreview.appendChild(img);
+				imagePreview.style.display = 'block';
+			} else {
+				imagePreview.style.display = 'none';
 			}
 		},
 		remove: () => {
@@ -474,24 +576,16 @@ function createFloatingClipboardWindow(
 	const container = document.createElement('div');
 	container.style.cssText = commonStyles.floatingWindow;
 
-	// Create header with sticky positioning
+	// Create header
 	const header = document.createElement('div');
-	header.style.cssText = commonStyles.floatingHeader + `
-        position: sticky;
-        top: 0;
-        background: #f8f9fa;
-        z-index: 1;
-    `;
+	header.style.cssText = commonStyles.floatingHeader;
 
 	const title = document.createElement('div');
-	title.textContent = 'Intelligent Paste';
+	title.textContent = 'Intelligent Paste Results';
 	title.style.fontWeight = 'bold';
 
 	const closeButton = document.createElement('button');
-	closeButton.style.cssText = commonStyles.closeButton + `
-        position: sticky;
-        right: 12px;
-    `;
+	closeButton.style.cssText = commonStyles.closeButton;
 	closeButton.innerHTML = '×';
 	closeButton.onclick = () => {
 		container.remove();
@@ -508,299 +602,106 @@ function createFloatingClipboardWindow(
 
 	// If we have extracted info, show it first
 	if (extractedInfo) {
-		const extractedSection = document.createElement('div');
-		extractedSection.style.marginBottom = '16px';
+		// Mapped Fields Section
+		if (
+			extractedInfo.mappings &&
+			Object.keys(extractedInfo.mappings).length > 0
+		) {
+			const mappedSection = document.createElement('div');
+			mappedSection.style.marginBottom = '16px';
 
-		// Combine and sort all data
-		const allData = [];
+			const mappedTitle = document.createElement('div');
+			mappedTitle.textContent = 'Mapped Fields';
+			mappedTitle.style.cssText =
+				'font-weight: bold; margin-bottom: 8px; color: #2196F3;';
+			mappedSection.appendChild(mappedTitle);
 
-		// Add mapped fields
-		if (extractedInfo.mappings && typeof extractedInfo.mappings === 'object') {
 			Object.entries(extractedInfo.mappings).forEach(([fieldId, data]) => {
-				if (data && data.value) {
-					allData.push({
-						key: fieldId,
-						value: data.value,
-						index: data.index || 90, // Default high priority for mapped fields
-						isMapped: true
-					});
-				}
+				const value = typeof data === 'object' ? data.value : data;
+				const confidence = typeof data === 'object' ? data.index : 90;
+
+				createContentItem(
+					mappedSection,
+					fieldId,
+					value,
+					confidence,
+					true // is mapped field
+				);
 			});
+
+			content.appendChild(mappedSection);
 		}
 
-		// Add unmapped data
-		if (extractedInfo.unmappedData && typeof extractedInfo.unmappedData === 'object') {
+		// Unmapped Data Section
+		if (
+			extractedInfo.unmappedData &&
+			Object.keys(extractedInfo.unmappedData).length > 0
+		) {
+			const unmappedSection = document.createElement('div');
+			unmappedSection.style.marginBottom = '16px';
+
+			const unmappedTitle = document.createElement('div');
+			unmappedTitle.textContent = 'Additional Information';
+			unmappedTitle.style.cssText =
+				'font-weight: bold; margin-bottom: 8px; color: #666;';
+			unmappedSection.appendChild(unmappedTitle);
+
 			Object.entries(extractedInfo.unmappedData).forEach(([key, data]) => {
-				if (data && data.value) {
-					allData.push({
-						key: key,
-						value: data.value,
-						index: data.index || 50, // Default medium priority for unmapped
-						isMapped: false
-					});
-				}
+				const value = typeof data === 'object' ? data.value : data;
+				const confidence = typeof data === 'object' ? data.index : 50;
+
+				createContentItem(
+					unmappedSection,
+					key,
+					value,
+					confidence,
+					false // is unmapped field
+				);
 			});
+
+			content.appendChild(unmappedSection);
 		}
-
-		// Sort all data by index
-		allData.sort(sortByIndex);
-
-		// Create sections for the sorted data
-		allData.forEach(item => {
-			const itemContainer = document.createElement('div');
-			itemContainer.style.cssText = commonStyles.contentItem + `
-                cursor: pointer;
-                position: relative;
-                transition: background-color 0.2s;
-            `;
-
-			// Add relevance indicator
-			const relevanceIndicator = document.createElement('div');
-			relevanceIndicator.style.cssText = `
-				position: absolute;
-				top: 0;
-				 right: 0;
-				 padding: 4px 8px;
-				 font-size: 11px;
-				 color: ${item.index >= 90 ? '#2196F3' : 
-						 item.index >= 70 ? '#4CAF50' : 
-						 item.index >= 40 ? '#FF9800' : '#757575'};
-				 background: ${item.index >= 90 ? '#E3F2FD' : 
-						  item.index >= 70 ? '#E8F5E9' : 
-						  item.index >= 40 ? '#FFF3E0' : '#F5F5F5'};
-				 border-radius: 0 4px 0 4px;
-			`;
-			relevanceIndicator.textContent = `${item.index}%`;
-			itemContainer.appendChild(relevanceIndicator);
-
-			const valueText = document.createElement('div');
-			valueText.style.display = 'flex';
-			valueText.style.justifyContent = 'space-between';
-			valueText.style.alignItems = 'center';
-			valueText.style.paddingRight = '40px'; // Make room for relevance indicator
-
-			const fieldLabel = document.createElement('span');
-			fieldLabel.style.color = '#666';
-			fieldLabel.textContent = `${item.key}:`;
-
-			const fieldValue = document.createElement('span');
-			fieldValue.style.marginLeft = '8px';
-			fieldValue.style.wordBreak = 'break-all';
-			fieldValue.textContent = item.value;
-
-			valueText.appendChild(fieldLabel);
-			valueText.appendChild(fieldValue);
-			itemContainer.appendChild(valueText);
-
-			// Add copy indicator
-			const copyIndicator = document.createElement('span');
-			copyIndicator.style.cssText = `
-				position: absolute;
-				top: 4px;
-				right: 4px;
-				background: #4CAF50;
-				color: white;
-				padding: 2px 6px;
-				border-radius: 3px;
-				font-size: 11px;
-				opacity: 0;
-				transition: opacity 0.2s;
-				z-index: 2;
-			`;
-			copyIndicator.textContent = 'Copied!';
-			itemContainer.appendChild(copyIndicator);
-
-			// Add mapped/unmapped indicator
-			const typeIndicator = document.createElement('div');
-			typeIndicator.style.cssText = `
-				font-size: 11px;
-				color: ${item.isMapped ? '#2196F3' : '#757575'};
-				margin-top: 4px;
-			`;
-			typeIndicator.textContent = item.isMapped ? 'Mapped Field' : 'Additional Info';
-			itemContainer.appendChild(typeIndicator);
-
-			// Add click handler
-			itemContainer.onclick = async () => {
-				try {
-					const textToCopy = item.value.toString();
-					
-					// Get the currently focused element
-					const formElement = lastFocusedElement;
-					const isFormField = formElement && (
-						formElement.tagName === 'INPUT' ||
-						formElement.tagName === 'TEXTAREA' ||
-						formElement.tagName === 'SELECT' ||
-						formElement.isContentEditable ||
-						formElement.getAttribute('role') === 'textbox' ||
-						formElement.getAttribute('contenteditable') === 'true'
-					);
-
-					// Copy to clipboard
-					await navigator.clipboard.writeText(textToCopy);
-
-					// Update the indicator text based on action
-					copyIndicator.textContent = isFormField ? 'Inserted!' : 'Copied!';
-					copyIndicator.style.opacity = '1';
-					setTimeout(() => {
-						copyIndicator.style.opacity = '0';
-					}, 1000);
-
-					// If a form field was last focused, insert the value
-					if (isFormField && formElement) {
-						if (formElement.tagName === 'SELECT') {
-							// For select elements, try to find matching option
-							const options = Array.from(formElement.options);
-							const matchingOption = options.find(opt => 
-								opt.text.toLowerCase().includes(textToCopy.toLowerCase()) ||
-								opt.value.toLowerCase().includes(textToCopy.toLowerCase())
-							);
-							if (matchingOption) {
-								formElement.value = matchingOption.value;
-							}
-						} else if (formElement.isContentEditable || formElement.getAttribute('contenteditable') === 'true') {
-							formElement.textContent = textToCopy;
-						} else {
-							formElement.value = textToCopy;
-						}
-
-						// Trigger change events
-						formElement.dispatchEvent(new Event('input', { bubbles: true }));
-						formElement.dispatchEvent(new Event('change', { bubbles: true }));
-
-						// Visual feedback
-						const originalBackground = formElement.style.backgroundColor;
-						formElement.style.backgroundColor = '#e3f2fd';
-						setTimeout(() => {
-							formElement.style.backgroundColor = originalBackground;
-						}, 500);
-					}
-				} catch (error) {
-					console.error('Failed to copy/insert:', error);
-				}
-			};
-
-			// Add hover effects
-			itemContainer.onmouseover = () => {
-				itemContainer.style.backgroundColor = '#eee';
-			};
-
-			itemContainer.onmouseout = () => {
-				itemContainer.style.backgroundColor = '#f5f5f5';
-			};
-
-			extractedSection.appendChild(itemContainer);
-		});
-
-		content.appendChild(extractedSection);
 	}
 
-	// Add original content section
+	// Add original content section if available
 	if (clipboardText || imageBase64) {
+		const originalSection = document.createElement('div');
 		const originalTitle = document.createElement('div');
 		originalTitle.textContent = 'Original Content';
-		originalTitle.style.fontWeight = 'bold';
-		originalTitle.style.marginBottom = '8px';
-		content.appendChild(originalTitle);
+		originalTitle.style.cssText =
+			'font-weight: bold; margin: 16px 0 8px 0; color: #666;';
+		originalSection.appendChild(originalTitle);
 
-		// Add text content if available
 		if (clipboardText) {
-			const chunks = clipboardText
-				.split(/[\n,]+/)
-				.filter((chunk) => chunk.trim());
-			chunks.forEach((chunk) => {
-				const item = document.createElement('div');
-				item.style.cssText = commonStyles.contentItem;
-				item.textContent = chunk.trim();
-
-				const copyIndicator = document.createElement('span');
-				copyIndicator.style.cssText = commonStyles.copyIndicator;
-				copyIndicator.textContent = 'Copied!';
-				item.appendChild(copyIndicator);
-
-				item.onclick = async () => {
-					try {
-						await navigator.clipboard.writeText(chunk.trim());
-						copyIndicator.style.opacity = '1';
-						setTimeout(() => {
-							copyIndicator.style.opacity = '0';
-						}, 1000);
-					} catch (error) {
-						console.error('Failed to copy:', error);
-					}
-				};
-
-				item.onmouseover = () => {
-					item.style.backgroundColor = '#eee';
-				};
-
-				item.onmouseout = () => {
-					item.style.backgroundColor = '#f5f5f5';
-				};
-
-				content.appendChild(item);
-			});
+			createContentItem(
+				originalSection,
+				'Clipboard Text',
+				clipboardText,
+				null,
+				false
+			);
 		}
 
-		// Add image preview if available
 		if (imageBase64) {
 			const imageContainer = document.createElement('div');
 			imageContainer.style.cssText = commonStyles.contentItem;
-
 			const img = document.createElement('img');
 			img.src = `data:image/png;base64,${imageBase64}`;
 			img.style.maxWidth = '100%';
 			img.style.borderRadius = '4px';
-
 			imageContainer.appendChild(img);
-			content.appendChild(imageContainer);
+			originalSection.appendChild(imageContainer);
 		}
+
+		content.appendChild(originalSection);
 	}
 
 	container.appendChild(content);
 	document.body.appendChild(container);
 
-	// Store reference to current window
-	currentFloatingWindow = container;
+	// Make window draggable
+	makeWindowDraggable(container, header);
 
-	// Make the window draggable
-	let isDragging = false;
-	let currentX;
-	let currentY;
-	let initialX;
-	let initialY;
-
-	header.style.cursor = 'move';
-	header.addEventListener('mousedown', dragStart);
-
-	function dragStart(e) {
-		initialX = e.clientX - container.offsetLeft;
-		initialY = e.clientY - container.offsetTop;
-		isDragging = true;
-
-		document.addEventListener('mousemove', drag);
-		document.addEventListener('mouseup', dragEnd);
-	}
-
-	function drag(e) {
-		if (isDragging) {
-			e.preventDefault();
-			currentX = e.clientX - initialX;
-			currentY = e.clientY - initialY;
-			container.style.left = `${currentX}px`;
-			container.style.top = `${currentY}px`;
-			container.style.bottom = 'auto';
-			container.style.right = 'auto';
-		}
-	}
-
-	function dragEnd() {
-		isDragging = false;
-		document.removeEventListener('mousemove', drag);
-		document.removeEventListener('mouseup', dragEnd);
-	}
-
-	// Update the return value to include a reference to the window
 	return {
 		element: container,
 		remove: () => {
@@ -810,9 +711,217 @@ function createFloatingClipboardWindow(
 	};
 }
 
-// Update the handlePaste function to remove the floating window check
+// Helper function to create content items
+function createContentItem(
+	parent,
+	label,
+	value,
+	confidence = null,
+	isMapped = false
+) {
+	const item = document.createElement('div');
+	item.style.cssText = `
+        position: relative;
+        margin-bottom: 4px;
+        padding: 8px;
+        background: ${isMapped ? '#f3f9ff' : '#f5f5f5'};
+        border: 1px solid ${isMapped ? '#e3f2fd' : '#eee'};
+        border-radius: 4px;
+        transition: background-color 0.2s;
+    `;
+
+	// Main content container
+	const contentContainer = document.createElement('div');
+	contentContainer.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-right: ${
+					confidence !== null ? '40px' : '0'
+				}; // Space for confidence indicator
+    `;
+
+	// Label and value
+	const textContent = document.createElement('div');
+	textContent.style.cssText = 'flex: 1; min-width: 0;';
+
+	const labelElement = document.createElement('span');
+	labelElement.style.cssText =
+		'font-weight: bold; color: #666; margin-right: 8px;';
+	labelElement.textContent = label + ':';
+	textContent.appendChild(labelElement);
+
+	const valueElement = document.createElement('span');
+	valueElement.style.cssText = 'word-break: break-word; color: #333;';
+	valueElement.textContent = value;
+	textContent.appendChild(valueElement);
+
+	contentContainer.appendChild(textContent);
+
+	// Add confidence indicator if available
+	if (confidence !== null) {
+		const confidenceIndicator = document.createElement('span');
+		confidenceIndicator.style.cssText = `
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 11px;
+            background: ${getConfidenceColor(confidence)};
+            color: white;
+        `;
+		confidenceIndicator.textContent = `${confidence}%`;
+		item.appendChild(confidenceIndicator);
+	}
+
+	// Action buttons container (floating)
+	const actions = document.createElement('div');
+	actions.style.cssText = `
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
+        gap: 4px;
+        opacity: 0;
+        transition: opacity 0.2s;
+        background: linear-gradient(to left, ${
+					isMapped ? '#f3f9ff' : '#f5f5f5'
+				} 70%, transparent);
+    `;
+
+	// Copy button
+	const copyButton = createActionButton('Copy', () => {
+		navigator.clipboard.writeText(value);
+		showFeedback(item, 'Copied!');
+	});
+	actions.appendChild(copyButton);
+
+	// Insert button (only show when a form field is focused)
+	if (lastFocusedElement && isValidFormField(lastFocusedElement)) {
+		const insertButton = createActionButton('Insert', () => {
+			insertValueIntoField(lastFocusedElement, value);
+			showFeedback(item, 'Inserted!');
+		});
+		actions.appendChild(insertButton);
+	}
+
+	item.appendChild(contentContainer);
+	item.appendChild(actions);
+
+	// Show/hide actions on hover
+	item.addEventListener('mouseenter', () => {
+		actions.style.opacity = '1';
+		item.style.backgroundColor = isMapped ? '#e3f2fd' : '#eee';
+	});
+	item.addEventListener('mouseleave', () => {
+		actions.style.opacity = '0';
+		item.style.backgroundColor = isMapped ? '#f3f9ff' : '#f5f5f5';
+	});
+
+	parent.appendChild(item);
+	return item;
+}
+
+// Helper function to create action buttons
+function createActionButton(text, onClick) {
+	const button = document.createElement('button');
+	button.style.cssText = `
+        padding: 2px 6px;
+        border: none;
+        border-radius: 3px;
+        background: #2196F3;
+        color: white;
+        cursor: pointer;
+        font-size: 11px;
+        transition: background-color 0.2s;
+        white-space: nowrap;
+    `;
+	button.textContent = text;
+	button.onclick = (e) => {
+		e.stopPropagation();
+		onClick();
+	};
+	return button;
+}
+
+// Helper function to show feedback
+function showFeedback(item, message, type = 'success') {
+	const feedback = document.createElement('div');
+	feedback.style.cssText = `
+        position: absolute;
+        top: 50%;
+        right: 8px;
+        transform: translateY(-50%);
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        background: ${type === 'success' ? '#4CAF50' : '#FF9800'};
+        color: white;
+        opacity: 0;
+        transition: opacity 0.2s;
+        z-index: 1000;
+    `;
+	feedback.textContent = message;
+	item.appendChild(feedback);
+
+	requestAnimationFrame(() => {
+		feedback.style.opacity = '1';
+		setTimeout(() => {
+			feedback.style.opacity = '0';
+			setTimeout(() => feedback.remove(), 200);
+		}, 1500);
+	});
+}
+
+// Helper function to get confidence color
+function getConfidenceColor(confidence) {
+	if (confidence >= 90) return '#2196F3';
+	if (confidence >= 70) return '#4CAF50';
+	if (confidence >= 40) return '#FF9800';
+	return '#757575';
+}
+
+// Helper function to insert value into field
+function insertValueIntoField(field, value) {
+	if (field.tagName === 'SELECT') {
+		const options = Array.from(field.options);
+		const matchingOption = options.find(
+			(opt) =>
+				opt.text.toLowerCase().includes(value.toLowerCase()) ||
+				opt.value.toLowerCase().includes(value.toLowerCase())
+		);
+		if (matchingOption) {
+			field.value = matchingOption.value;
+		}
+	} else if (
+		field.isContentEditable ||
+		field.getAttribute('contenteditable') === 'true'
+	) {
+		field.textContent = value;
+	} else {
+		field.value = value;
+	}
+
+	// Trigger change events
+	field.dispatchEvent(new Event('input', { bubbles: true }));
+	field.dispatchEvent(new Event('change', { bubbles: true }));
+
+	// Visual feedback
+	const originalBackground = field.style.backgroundColor;
+	field.style.backgroundColor = '#e3f2fd';
+	setTimeout(() => {
+		field.style.backgroundColor = originalBackground;
+	}, 500);
+}
+
+// Update the handlePaste function to check for cancellation
 async function handlePaste(e) {
-	// Prevent recursive paste handling
+	window.intelligentPasteCancelled = false;
+
 	if (isProcessingPaste) {
 		debugLog('Already processing a paste event, skipping');
 		return;
@@ -823,35 +932,31 @@ async function handlePaste(e) {
 		debugLog('Paste event captured!');
 		isProcessingPaste = true;
 
-		// Create step tracker with progress bar
 		stepTracker = createStepTracker();
 		stepTracker.showProgress(true);
 		stepTracker.updateStep('Detecting form fields...');
 		let progress = 0;
 
-		// Get all form fields first
 		const formFields = getAllFormFields();
 		if (!formFields || formFields.length === 0) {
-			showNotification('No form fields found on page', 'error');
-			stepTracker.remove();
+			stepTracker.updateStep('❌ No form fields found on page');
+			setTimeout(() => stepTracker.remove(), 2000);
 			isProcessingPaste = false;
 			return;
 		}
 
 		stepTracker.updateStep(`Found ${formFields.length} form fields`);
-		progress = 10;
+		10;
 		stepTracker.updateProgress(progress);
 
-		// Get clipboard data
 		stepTracker.updateStep('Reading clipboard content...');
 		let clipboardText = '';
 		let imageBase64 = null;
 
 		try {
-			// Try to read clipboard content
 			const [text, items] = await Promise.all([
 				navigator.clipboard.readText().catch(() => ''),
-				navigator.clipboard.read().catch(() => [])
+				navigator.clipboard.read().catch(() => []),
 			]);
 
 			clipboardText = text;
@@ -861,7 +966,6 @@ async function handlePaste(e) {
 			progress = 20;
 			stepTracker.updateProgress(progress);
 
-			// Try to extract image from clipboard items
 			if (items && items.length > 0) {
 				stepTracker.updateStep('Checking for images in clipboard...');
 				for (const item of items) {
@@ -889,30 +993,46 @@ async function handlePaste(e) {
 		}
 
 		if (!clipboardText && !imageBase64) {
-			debugLog('No content found in clipboard');
-			showNotification('No content found in clipboard', 'error');
+			stepTracker.updateStep('❌ No content found in clipboard');
+			setTimeout(() => stepTracker.remove(), 2000);
 			isProcessingPaste = false;
 			return;
 		}
 
-		// Send to OpenAI for processing
+		if (clipboardText || imageBase64) {
+			stepTracker.showClipboardContent(clipboardText, imageBase64);
+		}
+
+		if (window.intelligentPasteCancelled) {
+			throw new Error('Processing cancelled by user');
+		}
+
 		stepTracker.updateStep('Preparing content for AI analysis...');
 		progress = 40;
 		stepTracker.updateProgress(progress);
 
+		if (window.intelligentPasteCancelled) {
+			throw new Error('Processing cancelled by user');
+		}
+
 		stepTracker.updateStep('Sending to OpenAI for analysis...');
+		progress = 60;
+		stepTracker.updateProgress(progress);
+
 		const response = await chrome.runtime.sendMessage({
 			action: 'intelligentPaste',
 			clipboardText,
 			formFields,
-			imageBase64
+			imageBase64,
 		});
 
 		if (response?.mappings) {
 			const mappedFieldCount = Object.keys(response.mappings).length;
 			const unmappedDataCount = Object.keys(response.unmappedData || {}).length;
-			
-			stepTracker.updateStep(`AI identified ${mappedFieldCount} field matches and ${unmappedDataCount} additional data points`);
+
+			stepTracker.updateStep(
+				`AI identified ${mappedFieldCount} field matches and ${unmappedDataCount} additional data points`
+			);
 			progress = 80;
 			stepTracker.updateProgress(progress);
 
@@ -920,32 +1040,34 @@ async function handlePaste(e) {
 			progress = 90;
 			stepTracker.updateProgress(progress);
 
-			// Fill form fields
 			fillFormFields(response.mappings);
 
-			// Update progress to 100%
 			progress = 100;
 			stepTracker.updateProgress(progress);
-			stepTracker.updateStep('Processing complete!');
+			stepTracker.updateStep(
+				'✅ Processing complete! Form filled successfully.'
+			);
 
-			// Create floating window with results
+			// Wait a moment to show success before removing progress window
+			setTimeout(() => {
+				stepTracker.remove();
 				createFloatingClipboardWindow(clipboardText, imageBase64, response);
-			showNotification('Form filled successfully!', 'success');
+			}, 1500);
 		} else {
 			throw new Error('No mappings received from AI');
 		}
-
-		// Remove step tracker after a short delay
-		setTimeout(() => {
-			stepTracker.remove();
-		}, 1000);
 	} catch (error) {
+		if (error.message === 'Processing cancelled by user') {
+			if (stepTracker) {
+				stepTracker.remove();
+			}
+			return;
+		}
 		if (stepTracker) {
-			stepTracker.updateStep(`Error: ${error.message}`);
-			setTimeout(() => stepTracker.remove(), 1000);
+			stepTracker.updateStep(`❌ Error: ${error.message}`);
+			setTimeout(() => stepTracker.remove(), 2000);
 		}
 		debugLog('Critical error in paste handler:', error.message || error);
-		showNotification('Error processing clipboard content. Please try again.', 'error');
 	} finally {
 		isProcessingPaste = false;
 		debugLog('Paste processing flag reset');
@@ -1216,10 +1338,11 @@ function fillFormFields(mappings) {
 
 	Object.entries(actualMappings).forEach(([fieldId, mapping]) => {
 		// Extract the value from the mapping object
-		const value = typeof mapping === 'object' && mapping.value !== undefined 
-			? mapping.value 
-			: mapping;
-		
+		const value =
+			typeof mapping === 'object' && mapping.value !== undefined
+				? mapping.value
+				: mapping;
+
 		debugLog(`Trying to fill field "${fieldId}" with value:`, value);
 
 		// Try to find the field using multiple selectors
@@ -1482,4 +1605,74 @@ document.addEventListener('focusin', (e) => {
 // Helper function to sort by index
 function sortByIndex(a, b) {
 	return (b.index || 0) - (a.index || 0);
+}
+
+// Helper function to check if an element is a valid form field
+function isValidFormField(element) {
+	return (
+		element.tagName &&
+		(element.tagName === 'INPUT' ||
+			element.tagName === 'TEXTAREA' ||
+			element.tagName === 'SELECT' ||
+			element.isContentEditable ||
+			element.getAttribute('contenteditable') === 'true')
+	);
+}
+
+// Add this function to make windows draggable
+function makeWindowDraggable(container, handle) {
+	let isDragging = false;
+	let currentX;
+	let currentY;
+	let initialX;
+	let initialY;
+
+	handle.style.cursor = 'move';
+
+	handle.addEventListener('mousedown', dragStart);
+	document.addEventListener('mousemove', drag);
+	document.addEventListener('mouseup', dragEnd);
+
+	function dragStart(e) {
+		if (e.target.tagName === 'BUTTON') return; // Don't start drag if clicking a button
+
+		initialX = e.clientX - container.offsetLeft;
+		initialY = e.clientY - container.offsetTop;
+
+		if (e.target === handle) {
+			isDragging = true;
+		}
+	}
+
+	function drag(e) {
+		if (isDragging) {
+			e.preventDefault();
+
+			currentX = e.clientX - initialX;
+			currentY = e.clientY - initialY;
+
+			// Keep window within viewport
+			const maxX = window.innerWidth - container.offsetWidth;
+			const maxY = window.innerHeight - container.offsetHeight;
+
+			currentX = Math.min(Math.max(0, currentX), maxX);
+			currentY = Math.min(Math.max(0, currentY), maxY);
+
+			container.style.left = currentX + 'px';
+			container.style.top = currentY + 'px';
+			container.style.bottom = 'auto';
+			container.style.right = 'auto';
+		}
+	}
+
+	function dragEnd() {
+		isDragging = false;
+	}
+
+	// Cleanup function
+	return () => {
+		handle.removeEventListener('mousedown', dragStart);
+		document.removeEventListener('mousemove', drag);
+		document.removeEventListener('mouseup', dragEnd);
+	};
 }
