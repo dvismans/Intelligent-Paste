@@ -1,59 +1,95 @@
 console.log('Content script loaded!');
 
-// Add both event listeners at the top of the file
-document.addEventListener('keydown', (e) => {
-	// Check for Alt/Option + P
-	if (e.altKey && e.code === 'KeyP') {
-		e.preventDefault(); // Prevent any default behavior
-		debugLog('Intelligent paste shortcut detected (Alt/Option + P)');
+// Add this shared function for clipboard reading
+async function readClipboardContent() {
+	debugLog('Reading clipboard content...');
+	try {
+		const [text, items] = await Promise.all([
+			navigator.clipboard.readText().catch(() => ''),
+			navigator.clipboard.read().catch(() => []),
+		]);
 
-		// Read from clipboard using Clipboard API
-		navigator.clipboard
-			.read()
-			.then(async (clipboardItems) => {
-				let clipboardText = '';
-				let imageBase64 = null;
+		let clipboardText = text;
+		let imageBase64 = null;
 
-				for (const item of clipboardItems) {
-					// Handle text
-					if (item.types.includes('text/plain')) {
-						const blob = await item.getType('text/plain');
-						clipboardText = await blob.text();
-					}
-					// Handle image
-					if (item.types.some((type) => type.startsWith('image/'))) {
-						const imageType = item.types.find((type) =>
-							type.startsWith('image/')
-						);
-						if (imageType) {
-							const blob = await item.getType(imageType);
-							imageBase64 = await new Promise((resolve) => {
-								const reader = new FileReader();
-								reader.onload = () => resolve(reader.result.split(',')[1]);
-								reader.readAsDataURL(blob);
-							});
+		// Try to extract image from clipboard items
+		if (items && items.length > 0) {
+			for (const item of items) {
+				try {
+					if (item.types && Array.isArray(item.types)) {
+						for (const type of item.types) {
+							if (type && type.startsWith('image/')) {
+								const blob = await item.getType(type);
+								imageBase64 = await new Promise((resolve) => {
+									const reader = new FileReader();
+									reader.onload = () => resolve(reader.result.split(',')[1]);
+									reader.readAsDataURL(blob);
+								});
+								break;
+							}
 						}
 					}
+				} catch (error) {
+					debugLog('Error processing clipboard item:', error);
 				}
+			}
+		}
 
-				// Create a synthetic paste event
-				const syntheticEvent = {
-					preventDefault: () => {},
-					clipboardData: {
-						getData: (type) => (type === 'text/plain' ? clipboardText : ''),
-						items: clipboardItems,
-					},
-				};
+		debugLog('Clipboard content read:', {
+			hasText: !!clipboardText,
+			hasImage: !!imageBase64,
+		});
 
-				// Handle the paste with our existing function
-				handlePaste(syntheticEvent);
+		return { clipboardText, imageBase64, items };
+	} catch (error) {
+		debugLog('Error reading clipboard:', error);
+		throw new Error('Failed to read clipboard content');
+	}
+}
+
+// Update the message listeners to use the shared function
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+	if (
+		request.action === 'intelligent-paste' ||
+		request.action === 'run-intelligent-paste'
+	) {
+		// Get all form fields first
+		const formFields = getAllFormFields();
+		if (!formFields || formFields.length === 0) {
+			showNotification('No form fields found on page', 'error');
+			return;
+		}
+
+		// Read clipboard and handle paste
+		readClipboardContent()
+			.then(({ clipboardText, imageBase64, items }) => {
+				if (clipboardText || imageBase64) {
+					const syntheticEvent = {
+						preventDefault: () => {},
+						clipboardData: {
+							getData: (type) => (type === 'text/plain' ? clipboardText : ''),
+							items: items,
+						},
+					};
+					handlePaste(syntheticEvent);
+				} else {
+					showNotification(
+						'No content found in clipboard. Please copy some text or image first.',
+						'error'
+					);
+				}
 			})
 			.catch((error) => {
-				debugLog('Error reading clipboard:', error);
-				showNotification('Failed to read clipboard content', 'error');
+				debugLog('Error handling clipboard:', error);
+				showNotification(
+					'Failed to read clipboard content. Please try copying again.',
+					'error'
+				);
 			});
 	}
 });
+
+// Remove the old keydown event listener since we're removing Alt+P functionality
 
 // Remove the old paste event listener
 // document.addEventListener('paste', handlePaste, true);
