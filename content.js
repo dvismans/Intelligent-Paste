@@ -1,5 +1,12 @@
 console.log('Content script loaded!');
 
+// Global variables
+let isProcessingPaste = false;
+let currentFloatingWindow = null;
+let lastFocusedElement = null;
+let lastFocusedTextElement = null;
+let lastFocusedElementValue = null;
+
 // Add this shared function for clipboard reading
 async function readClipboardContent() {
 	debugLog('Reading clipboard content...');
@@ -138,89 +145,6 @@ function debugLog(message, data = null) {
 		: `${timestamp} - ${message}`;
 	console.log(logMessage);
 }
-
-// Keep these declarations at the top
-let isProcessingPaste = false;
-let currentFloatingWindow = null;
-let lastFocusedElement = null;
-let lastFocusedTextElement = null;
-let lastFocusedElementValue = null;
-
-// Update the message listener
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-	if (request.action === 'intelligent-paste') {
-		// Get all form fields first
-		const formFields = getAllFormFields();
-		if (!formFields || formFields.length === 0) {
-			showNotification('No form fields found on page', 'error');
-			return;
-		}
-
-		// Create synthetic paste event
-		const syntheticEvent = {
-			preventDefault: () => {},
-			clipboardData: {
-				getData: () => '',
-				items: [],
-			},
-		};
-
-		// Try to read clipboard content
-		Promise.all([
-			navigator.clipboard.readText().catch(() => ''),
-			navigator.clipboard.read().catch(() => []),
-		])
-			.then(async ([clipboardText, items]) => {
-				let imageBase64 = null;
-
-				// Try to extract image from clipboard items
-				if (items && items.length > 0) {
-					for (const item of items) {
-						try {
-							if (item.types && Array.isArray(item.types)) {
-								for (const type of item.types) {
-									if (type && type.startsWith('image/')) {
-										const blob = await item.getType(type);
-										imageBase64 = await new Promise((resolve) => {
-											const reader = new FileReader();
-											reader.onload = () =>
-												resolve(reader.result.split(',')[1]);
-											reader.readAsDataURL(blob);
-										});
-										break;
-									}
-								}
-							}
-						} catch (error) {
-							console.error('Error processing clipboard item:', error);
-						}
-					}
-				}
-
-				// Update synthetic event with clipboard content
-				syntheticEvent.clipboardData.getData = (type) =>
-					type === 'text/plain' ? clipboardText : '';
-				syntheticEvent.clipboardData.items = items;
-
-				// Handle the paste
-				if (clipboardText || imageBase64) {
-					handlePaste(syntheticEvent);
-				} else {
-					showNotification(
-						'No content found in clipboard. Please copy some text or image first.',
-						'error'
-					);
-				}
-			})
-			.catch((error) => {
-				console.error('Error reading clipboard:', error);
-				showNotification(
-					'Failed to read clipboard content. Please try copying again.',
-					'error'
-				);
-			});
-	}
-});
 
 // Move commonStyles to the top of the file
 const commonStyles = {
