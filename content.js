@@ -1643,18 +1643,16 @@ function findFormElements(identifier) {
 	// Try all these queries
 	const queries = [
 		// By name (most common for forms)
+		`select[name="${identifier}"]`,
 		`[name="${identifier}"]`,
 		// By ID if it exists
 		`#${identifier}`,
-
 		// By various data attributes
 		`[data-field="${identifier}"]`,
 		`[data-test-id="${identifier}"]`,
 		`[data-name="${identifier}"]`,
-
 		// By aria attributes
 		`[aria-label="${identifier}"]`,
-
 		// Partial matches on name
 		`[name*="${identifier}"]`,
 	];
@@ -1673,22 +1671,27 @@ function findFormElements(identifier) {
 		}
 	});
 
-	// Try finding by label text
-	document.querySelectorAll('label').forEach((label) => {
-		if (label.textContent.toLowerCase().includes(identifier.toLowerCase())) {
-			const forElement = label.getAttribute('for')
-				? document.getElementById(label.getAttribute('for'))
-				: label.querySelector('input, textarea, select');
-
-			if (
-				forElement &&
-				!elements.includes(forElement) &&
-				isValidFormField(forElement)
-			) {
-				elements.push(forElement);
-			}
-		}
-	});
+	// Log found elements with more detail
+	if (elements.length > 0) {
+		debugLog(
+			`Found elements for "${identifier}":`,
+			elements.map((el) => ({
+				tagName: el.tagName,
+				type: el.type,
+				id: el.id,
+				name: el.name,
+				value: el.value,
+				options:
+					el.tagName === 'SELECT'
+						? Array.from(el.options).map((opt) => ({
+								value: opt.value,
+								text: opt.text,
+								selected: opt.selected,
+						  }))
+						: undefined,
+			}))
+		);
+	}
 
 	return elements;
 }
@@ -1709,13 +1712,35 @@ function getElementValue(element) {
 function setElementValue(element, value) {
 	if (element.tagName === 'SELECT') {
 		const options = Array.from(element.options);
-		const matchingOption = options.find(
-			(opt) =>
-				opt.text.toLowerCase().includes(value.toString().toLowerCase()) ||
-				opt.value.toLowerCase().includes(value.toString().toLowerCase())
+		debugLog(
+			`Setting select value "${value}". Available options:`,
+			options.map((opt) => ({ value: opt.value, text: opt.text }))
 		);
+
+		// Try exact match first
+		let matchingOption = options.find(
+			(opt) =>
+				opt.value.toLowerCase() === value.toString().toLowerCase() ||
+				opt.text.toLowerCase() === value.toString().toLowerCase()
+		);
+
+		// If no exact match, try includes
+		if (!matchingOption) {
+			matchingOption = options.find(
+				(opt) =>
+					opt.value.toLowerCase().includes(value.toString().toLowerCase()) ||
+					opt.text.toLowerCase().includes(value.toString().toLowerCase())
+			);
+		}
+
 		if (matchingOption) {
+			debugLog(`Found matching option:`, {
+				value: matchingOption.value,
+				text: matchingOption.text,
+			});
 			element.value = matchingOption.value;
+		} else {
+			debugLog(`No matching option found for value: ${value}`);
 		}
 	} else if (
 		element.isContentEditable ||
@@ -1728,27 +1753,58 @@ function setElementValue(element, value) {
 }
 
 function validateElementValue(element, expectedValue) {
+	if (!element || expectedValue === undefined) return false;
+
 	const currentValue = getElementValue(element);
+	debugLog('Validating element value:', {
+		element: {
+			tagName: element.tagName,
+			type: element.type,
+			id: element.id,
+			name: element.name,
+		},
+		expectedValue,
+		currentValue,
+		isSelect: element.tagName === 'SELECT',
+		selectedOption:
+			element.tagName === 'SELECT'
+				? {
+						value: element.value,
+						text: element.options[element.selectedIndex]?.text,
+				  }
+				: undefined,
+	});
 
-	// Handle empty values
-	if (!currentValue && expectedValue) {
-		return false;
-	}
-
-	// For select elements, check both value and text
+	// For select elements
 	if (element.tagName === 'SELECT') {
+		const selectedOption = element.options[element.selectedIndex];
+		const expectedLower = expectedValue.toString().toLowerCase();
+		const selectedValueMatch = element.value.toLowerCase() === expectedLower;
+		const selectedTextMatch =
+			selectedOption?.text.toLowerCase() === expectedLower;
+		const selectedValueIncludes = element.value
+			.toLowerCase()
+			.includes(expectedLower);
+		const selectedTextIncludes = selectedOption?.text
+			.toLowerCase()
+			.includes(expectedLower);
+
+		debugLog('Select validation:', {
+			selectedValueMatch,
+			selectedTextMatch,
+			selectedValueIncludes,
+			selectedTextIncludes,
+		});
+
 		return (
-			element.value &&
-			(element.value
-				.toLowerCase()
-				.includes(expectedValue.toString().toLowerCase()) ||
-				element.options[element.selectedIndex]?.text
-					.toLowerCase()
-					.includes(expectedValue.toString().toLowerCase()))
+			selectedValueMatch ||
+			selectedTextMatch ||
+			selectedValueIncludes ||
+			selectedTextIncludes
 		);
 	}
 
-	// For other elements, do a direct comparison
+	// For other elements
 	return (
 		currentValue.toString().toLowerCase() ===
 		expectedValue.toString().toLowerCase()
