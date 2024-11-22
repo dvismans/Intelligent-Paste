@@ -294,9 +294,9 @@ For select fields, ensure the value matches one of the available options exactly
 		}
 
 		const requestBody = {
-			model: 'gpt-4-1106-vision-preview',
+			model: 'gpt-4o',
 			messages: messages,
-			max_tokens: 1000,
+			max_tokens: 2000,
 			temperature: 0.0,
 			seed: 123,
 		};
