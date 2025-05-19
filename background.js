@@ -1,5 +1,11 @@
-let OPENAI_API_KEY = null;
-let ADDITIONAL_INSTRUCTIONS = null;
+const BASE_PROMPT = `You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.
+
+The 'mappings' object should contain field IDs as keys and extracted values as values.
+The 'unmappedData' object should contain any additional information found that doesn't map to available fields.`;
+
+let g_openaiApiKey = null;
+let g_userProvidedInstructions = ''; // Initialize as empty string
+let g_intelligentPasteEnabled = true; // Default to true
 
 // Simple debug logging function
 function debugLog(message, data = null) {
@@ -34,25 +40,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		return true; // Will respond asynchronously
 	}
 
-	if (request.action === 'apiKeyUpdated') {
-		OPENAI_API_KEY = request.apiKey;
-		sendResponse({ success: true });
-		return false;
-	}
-
+	// 'apiKeyUpdated' is removed as 'settingsUpdated' handles API key.
 	if (request.action === 'debugLog') {
 		console.log(request.message);
 		return false;
 	}
 
 	if (request.action === 'settingsUpdated') {
-		console.log('Settings update received:', {
-			hasApiKey: !!request.apiKey,
-			hasInstructions: !!request.additionalInstructions,
-			instructions: request.additionalInstructions,
-		});
-		OPENAI_API_KEY = request.apiKey;
-		ADDITIONAL_INSTRUCTIONS = request.additionalInstructions;
+		console.log('Settings update received in background:', request);
+		g_openaiApiKey = request.apiKey;
+		g_userProvidedInstructions = request.userProvidedInstructions || ''; // Store user instructions
+		// g_intelligentPasteEnabled is updated by 'toggleStateChanged'
+		sendResponse({ success: true });
+		return false;
+	}
+
+	if (request.action === 'toggleStateChanged') { // Handles the enable/disable toggle
+		g_intelligentPasteEnabled = request.enabled;
+		console.log('Intelligent Paste enabled state changed to:', g_intelligentPasteEnabled);
 		sendResponse({ success: true });
 		return false;
 	}
@@ -67,27 +72,24 @@ async function checkStorage() {
 
 // Update the initial load
 chrome.storage.sync.get(
-	['openaiApiKey', 'additionalInstructions'],
-	async (result) => {
-		console.log('Initial load of settings:', {
-			hasApiKey: !!result.openaiApiKey,
-			hasInstructions: !!result.additionalInstructions,
-			instructions: result.additionalInstructions,
-		});
-
-		// Check all storage contents
-		const allStorage = await checkStorage();
-		console.log('All storage at initialization:', allStorage);
-
-		OPENAI_API_KEY = result.openaiApiKey;
-		ADDITIONAL_INSTRUCTIONS = result.additionalInstructions;
+	['openaiApiKey', 'userProvidedInstructions', 'intelligentPasteEnabled'], // Load all relevant settings
+	(result) => {
+		console.log('Initial load of settings from storage:', result);
+		g_openaiApiKey = result.openaiApiKey;
+		g_userProvidedInstructions = result.userProvidedInstructions || ''; // Default to empty string
+		if (result.intelligentPasteEnabled !== undefined) { // Check if defined before setting
+			g_intelligentPasteEnabled = result.intelligentPasteEnabled;
+		}
+		// The checkStorage call can be removed if not needed for specific debugging during init.
+		// async () => { ... await checkStorage(); ... } structure removed for simplicity
+		// as checkStorage was mainly for debugging.
 	}
 );
 
 // Add at the top of background.js, right after the variable declarations
 chrome.commands.onCommand.addListener(async (command) => {
 	debugLog('Command received:', command);
-	if (command === 'run-intelligent-paste') {
+	if (command === 'intelligent-paste') { // Changed from 'run-intelligent-paste'
 		// Get the active tab
 		const [tab] = await chrome.tabs.query({
 			active: true,
@@ -119,46 +121,26 @@ async function handleIntelligentPaste(
 		formFieldsCount: formFields?.length,
 		hasImage: !!imageBase64,
 		imageSize: imageBase64?.length,
+		intelligentPasteEnabled: g_intelligentPasteEnabled // Log current state
 	});
 
+	if (!g_intelligentPasteEnabled) {
+		console.log('Intelligent Paste is disabled. Aborting.');
+		// Send error back to content script or popup
+		throw new Error('Intelligent Paste is disabled. Please enable it in the settings.');
+	}
+
 	try {
-		// Check storage at the start of paste handling
-		const allStorage = await checkStorage();
-		console.log('All storage during paste:', allStorage);
+		// Settings (API key, user instructions) are now managed by global variables (g_*)
+		// and updated via message listeners and initial load.
+		// No need to fetch from storage here (e.g. checkStorage, chrome.storage.sync.get).
 
-		// Get settings if not already loaded
-		if (!OPENAI_API_KEY || ADDITIONAL_INSTRUCTIONS === null) {
-			console.log('Fetching settings because:', {
-				apiKeyMissing: !OPENAI_API_KEY,
-				instructionsMissing: ADDITIONAL_INSTRUCTIONS === null,
-			});
+		console.log('Using global settings for paste:', {
+			apiKeySet: !!g_openaiApiKey,
+			userInstructionsLength: g_userProvidedInstructions?.length
+		});
 
-			const result = await chrome.storage.sync.get([
-				'openaiApiKey',
-				'additionalPrompt',
-			]);
-			console.log('Fetched settings:', {
-				hasApiKey: !!result.openaiApiKey,
-				hasInstructions: !!result.additionalPrompt,
-				instructions: result.additionalPrompt,
-			});
-
-			OPENAI_API_KEY = result.openaiApiKey;
-			ADDITIONAL_INSTRUCTIONS = result.additionalPrompt;
-		}
-
-		// Try direct storage access
-		const directCheck = await chrome.storage.sync.get(['additionalPrompt']);
-		console.log('Direct storage check for instructions:', directCheck);
-
-		// Use the most recent value
-		const effectiveInstructions =
-			directCheck.additionalPrompt || ADDITIONAL_INSTRUCTIONS;
-		console.log('Using instructions:', effectiveInstructions);
-
-		console.log('Using Additional Instructions:', effectiveInstructions);
-
-		if (!OPENAI_API_KEY) {
+		if (!g_openaiApiKey) {
 			console.error('API key not found');
 			throw new Error(
 				'OpenAI API key not set. Please set your API key in the extension options.'
@@ -175,11 +157,15 @@ async function handleIntelligentPaste(
 			throw new Error('No content to process');
 		}
 
+		let systemMessageContent = BASE_PROMPT;
+		if (g_userProvidedInstructions && g_userProvidedInstructions.trim() !== '') {
+			systemMessageContent += "\n\nAdditional Instructions From User:\n" + g_userProvidedInstructions;
+		}
+
 		const messages = [
 			{
 				role: 'system',
-				content:
-					"You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.",
+				content: systemMessageContent, // Use combined system message
 			},
 		];
 
@@ -196,9 +182,9 @@ async function handleIntelligentPaste(
 				content: [
 					{
 						type: 'text',
-						text: `${
-							effectiveInstructions ? effectiveInstructions + '\n\n' : ''
-						}Extract information from this image and respond with ONLY a raw JSON object in this exact format:
+						// User-provided instructions are now part of the system message.
+						// The prompt here focuses on task-specific instructions for image processing.
+						text: `Extract information from this image and respond with ONLY a raw JSON object in this exact format:
 {
     "mappings": {
         // Use ONLY these field IDs: ${availableFields.join(', ')}
@@ -238,15 +224,12 @@ Remember: Return ONLY the JSON object, no markdown, no code blocks, no explanati
 				.filter(Boolean);
 			console.log('Available fields:', availableFields);
 
-			let userPrompt = `${
-				effectiveInstructions ? effectiveInstructions + '\n\n' : ''
-			}Analyze this text content and extract ALL information. For select fields, use ONLY the available options provided:`;
-
+			// userPrompt variable is removed as its content is now part of the system prompt or directly in the text.
 			messages.push({
 				role: 'user',
-				content:
-					userPrompt +
-					`
+				// User-provided instructions are now part of the system message.
+				// The prompt here focuses on task-specific instructions for text processing.
+				content: `Analyze this text content and extract ALL information. For select fields, use ONLY the available options provided:
 
 Text content to analyze:
 ${clipboardText}
@@ -306,7 +289,7 @@ For select fields, ensure the value matches one of the available options exactly
 		console.log('Method: POST');
 		console.log('Headers:', {
 			'Content-Type': 'application/json',
-			Authorization: 'Bearer sk-....' + OPENAI_API_KEY.slice(-4),
+			Authorization: 'Bearer sk-....' + (g_openaiApiKey ? g_openaiApiKey.slice(-4) : 'NULL'), // Use g_openaiApiKey
 		});
 		console.log('Request Body:', JSON.stringify(requestBody, null, 2));
 		console.groupEnd();
@@ -315,7 +298,7 @@ For select fields, ensure the value matches one of the available options exactly
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				Authorization: `Bearer ${OPENAI_API_KEY}`,
+				Authorization: `Bearer ${g_openaiApiKey}`, // Use g_openaiApiKey
 			},
 			body: JSON.stringify(requestBody),
 		});

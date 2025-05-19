@@ -4,23 +4,33 @@ document.addEventListener('DOMContentLoaded', () => {
 	const saveSettings = document.getElementById('saveSettings');
 	const statusMessage = document.getElementById('statusMessage');
 	const basePromptArea = document.querySelector('.base-prompt');
-
-	const BASE_PROMPT = `You are a form-filling assistant that ONLY responds with valid JSON. Your response must be a valid JSON object with 'mappings' and 'unmappedData' properties. Do not include any explanations, markdown formatting, or code blocks. Respond with raw JSON only.
-
-The 'mappings' object should contain field IDs as keys and extracted values as values.
-The 'unmappedData' object should contain any additional information found that doesn't map to available fields.`;
-
-	// Set the base prompt
-	basePromptArea.value = BASE_PROMPT;
+	const enableToggle = document.getElementById('enableIntelligentPasteToggle');
 
 	// Load saved settings
-	chrome.storage.sync.get(['openaiApiKey', 'additionalPrompt'], (result) => {
-		if (result.openaiApiKey) {
-			apiKeyInput.value = result.openaiApiKey;
+	chrome.storage.sync.get(
+		['openaiApiKey', 'userProvidedInstructions', 'intelligentPasteEnabled'], // Changed 'additionalPrompt' to 'userProvidedInstructions'
+		(result) => {
+			if (result.openaiApiKey) {
+				apiKeyInput.value = result.openaiApiKey;
+			}
+			if (result.userProvidedInstructions) { // Changed to 'userProvidedInstructions'
+				additionalPrompt.value = result.userProvidedInstructions; // Populate textarea
+			}
+			enableToggle.checked = result.intelligentPasteEnabled !== false;
 		}
-		if (result.additionalPrompt) {
-			additionalPrompt.value = result.additionalPrompt;
-		}
+	);
+
+	// Save toggle state
+	enableToggle.addEventListener('change', (event) => { // Added event listener
+		const isEnabled = event.target.checked;
+		chrome.storage.sync.set({ intelligentPasteEnabled: isEnabled }, () => {
+			showStatus('Enable/disable state saved.', 'success');
+			// Notify background script of toggle change
+			chrome.runtime.sendMessage({ 
+				action: 'toggleStateChanged', 
+				enabled: isEnabled 
+			});
+		});
 	});
 
 	// Save settings
@@ -33,22 +43,18 @@ The 'unmappedData' object should contain any additional information found that d
 			return;
 		}
 
-		// Combine base prompt with additional instructions
-		const fullPrompt = additionalInstructions 
-			? `${BASE_PROMPT}\n\nAdditional Instructions:\n${additionalInstructions}`
-			: BASE_PROMPT;
+		// BASE_PROMPT and fullPrompt combination removed
 
 		chrome.storage.sync.set({ 
 			openaiApiKey: apiKey,
-			additionalPrompt: additionalInstructions,
-			systemPrompt: fullPrompt
+			userProvidedInstructions: additionalInstructions // Changed key and value
 		}, () => {
 			showStatus('Settings saved successfully!', 'success');
 			// Notify background script of changes
 			chrome.runtime.sendMessage({ 
 				action: 'settingsUpdated',
 				apiKey,
-				systemPrompt: fullPrompt
+				userProvidedInstructions: additionalInstructions // Changed key and value
 			});
 		});
 	});

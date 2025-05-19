@@ -14,6 +14,57 @@
 				font-size: 24px;
 				margin-bottom: 20px;
 			}
+			.toggle-section { /* Added from popup.html */
+				display: flex;
+				align-items: center;
+				margin-bottom: 20px;
+				padding: 8px 0;
+			}
+			.toggle-label { /* Added from popup.html */
+				margin-left: 12px;
+				font-size: 14px;
+				color: #444;
+			}
+			.switch { /* Added from popup.html */
+				position: relative;
+				display: inline-block;
+				width: 44px;
+				height: 24px;
+				flex-shrink: 0;
+			}
+			.switch input { /* Added from popup.html */
+				opacity: 0;
+				width: 0;
+				height: 0;
+			}
+			.slider { /* Added from popup.html */
+				position: absolute;
+				cursor: pointer;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				background-color: #ccc;
+				transition: .3s;
+				border-radius: 24px;
+			}
+			.slider:before { /* Added from popup.html */
+				position: absolute;
+				content: "";
+				height: 18px;
+				width: 18px;
+				left: 3px;
+				bottom: 3px;
+				background-color: white;
+				transition: .3s;
+				border-radius: 50%;
+			}
+			input:checked + .slider { /* Added from popup.html */
+				background-color: #2196F3;
+			}
+			input:checked + .slider:before { /* Added from popup.html */
+				transform: translateX(20px);
+			}
 			.settings-section {
 				background: #f8f9fa;
 				border: 1px solid #ddd;
@@ -110,6 +161,17 @@
 	</head>
 	<body>
 		<h1>Intelligent Paste Settings</h1>
+
+		<div class="settings-section">
+			<div class="section-title">General</div>
+			<div class="toggle-section">
+				<label class="switch">
+					<input type="checkbox" id="enableIntelligentPasteToggle">
+					<span class="slider"></span>
+				</label>
+				<span class="toggle-label">Enable Intelligent Paste</span>
+			</div>
+		</div>
 
 		<div class="settings-section">
 			<div class="section-title">API Key</div>
