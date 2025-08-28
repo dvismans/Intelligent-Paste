@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0"
+		/>
+		<title>Test Form - Intelligent Paste</title>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+				background-color: #f5f5f5;
+			}
+
+			.container {
+				background: white;
+				padding: 30px;
+				border-radius: 8px;
+				box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+			}
+
+			h1 {
+				color: #333;
+				text-align: center;
+				margin-bottom: 30px;
+			}
+
+			.instructions {
+				background: #e3f2fd;
+				border: 1px solid #2196f3;
+				border-radius: 4px;
+				padding: 15px;
+				margin-bottom: 30px;
+			}
+
+			.instructions h3 {
+				margin-top: 0;
+				color: #1565c0;
+			}
+
+			.form-section {
+				margin-bottom: 30px;
+				padding: 20px;
+				border: 1px solid #ddd;
+				border-radius: 6px;
+				background-color: #fafafa;
+			}
+
+			.form-section h2 {
+				color: #2196f3;
+				margin-top: 0;
+				margin-bottom: 20px;
+				font-size: 18px;
+			}
+
+			.form-group {
+				margin-bottom: 15px;
+			}
+
+			.form-group label {
+				display: block;
+				margin-bottom: 5px;
+				font-weight: bold;
+				color: #333;
+			}
+
+			.form-group input,
+			.form-group select,
+			.form-group textarea {
+				width: 100%;
+				padding: 8px 12px;
+				border: 1px solid #ddd;
+				border-radius: 4px;
+				font-size: 14px;
+				box-sizing: border-box;
+			}
+
+			.form-group input:focus,
+			.form-group select:focus,
+			.form-group textarea:focus {
+				outline: none;
+				border-color: #2196f3;
+				box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+			}
+
+			.form-group textarea {
+				height: 80px;
+				resize: vertical;
+			}
+
+			.form-row {
+				display: flex;
+				gap: 15px;
+			}
+
+			.form-row .form-group {
+				flex: 1;
+			}
+
+			.submit-btn {
+				background: #2196f3;
+				color: white;
+				border: none;
+				padding: 12px 30px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 16px;
+				margin-top: 20px;
+			}
+
+			.submit-btn:hover {
+				background: #1976d2;
+			}
+
+			.clear-btn {
+				background: #666;
+				color: white;
+				border: none;
+				padding: 8px 20px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 14px;
+				margin-left: 10px;
+			}
+
+			.clear-btn:hover {
+				background: #555;
+			}
+
+			.navigation {
+				text-align: center;
+				margin-top: 30px;
+				padding-top: 20px;
+				border-top: 1px solid #ddd;
+			}
+
+			.nav-link {
+				display: inline-block;
+				margin: 0 10px;
+				padding: 10px 20px;
+				background: #2196f3;
+				color: white;
+				text-decoration: none;
+				border-radius: 4px;
+				transition: background-color 0.2s;
+			}
+
+			.nav-link:hover {
+				background: #1976d2;
+			}
+
+			.shortcut-hint {
+				background: #fff3cd;
+				border: 1px solid #ffeaa7;
+				color: #856404;
+				padding: 10px;
+				border-radius: 4px;
+				text-align: center;
+				font-weight: bold;
+				margin-bottom: 20px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>📝 Test Form - Intelligent Paste</h1>
+
+			<div class="instructions">
+				<h3>How to Test Intelligent Paste:</h3>
+				<ol>
+					<li>
+						Go to <a href="test-data.html">Test Data Page</a> and copy any
+						sample data
+					</li>
+					<li>Come back to this page</li>
+					<li>Press <strong>Option+P</strong> to trigger Intelligent Paste</li>
+					<li>
+						Watch as the extension intelligently maps the clipboard data to the
+						form fields!
+					</li>
+				</ol>
+			</div>
+
+			<div class="shortcut-hint">
+				💡 Press <strong>Option+P</strong> to trigger Intelligent Paste after
+				copying test data
+			</div>
+
+			<!-- Personal Information Form -->
+			<div class="form-section">
+				<h2>👤 Personal Information</h2>
+				<form id="personalForm">
+					<div class="form-row">
+						<div class="form-group">
+							<label for="firstName">First Name</label>
+							<input
+								type="text"
+								id="firstName"
+								name="firstName"
+								placeholder="Enter first name"
+							/>
+						</div>
+						<div class="form-group">
+							<label for="lastName">Last Name</label>
+							<input
+								type="text"
+								id="lastName"
+								name="lastName"
+								placeholder="Enter last name"
+							/>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label for="fullName">Full Name</label>
+						<input
+							type="text"
+							id="fullName"
+							name="fullName"
+							placeholder="Enter full name"
+						/>
+					</div>
+
+					<div class="form-group">
+						<label for="email">Email Address</label>
+						<input
+							type="email"
+							id="email"
+							name="email"
+							placeholder="Enter email address"
+						/>
+					</div>
+
+					<div class="form-group">
+						<label for="phone">Phone Number</label>
+						<input
+							type="tel"
+							id="phone"
+							name="phone"
+							placeholder="Enter phone number"
+						/>
+					</div>
+
+					<div class="form-group">
+						<label for="address">Address</label>
+						<textarea
+							id="address"
+							name="address"
+							placeholder="Enter full address"
+						></textarea>
+					</div>
+
+					<div class="form-row">
+						<div class="form-group">
+							<label for="dateOfBirth">Date of Birth</label>
+							<input
+								type="text"
+								id="dateOfBirth"
+								name="dateOfBirth"
+								placeholder="MM/DD/YYYY"
+							/>
+						</div>
+						<div class="form-group">
+							<label for="company">Company</label>
+							<input
+								type="text"
+								id="company"
+								name="company"
+								placeholder="Enter company name"
+							/>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label for="jobTitle">Job Title</label>
+						<input
+							type="text"
+							id="jobTitle"
+							name="jobTitle"
+							placeholder="Enter job title"
+						/>
+					</div>
+
+					<button
+						type="submit"
+						class="submit-btn"
+					>
+						Submit Personal Info
+					</button>
+					<button
+						type="button"
+						class="clear-btn"
+						onclick="clearForm('personalForm')"
+					>
+						Clear Form
+					</button>
+				</form>
+			</div>
+
+			<!-- Business Information Form -->
+			<div class="form-section">
+				<h2>🏢 Business Information</h2>
+				<form id="businessForm">
+					<div class="form-group">
+						<label for="companyName">Company Name</label>
+						<input
+							type="text"
+							id="companyName"
+							name="companyName"
+							placeholder="Enter company name"
+						/>
+					</div>
+
+					<div class="form-group">
+						<label for="contactPerson">Contact Person</label>
+						<input
+							type="text"
+							id="contactPerson"
+							name="contactPerson"
+							placeholder="Enter contact person"
+						/>
+					</div>
+
+					<div class="form-row">
+						<div class="form-group">
+							<label for="businessEmail">Business Email</label>
+							<input
+								type="email"
+								id="businessEmail"
+								name="businessEmail"
+								placeholder="Enter business email"
+							/>
+						</div>
+						<div class="form-group">
+							<label for="businessPhone">Business Phone</label>
+							<input
+								type="tel"
+								id="businessPhone"
+								name="businessPhone"
+								placeholder="Enter business phone"
+							/>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label for="website">Website</label>
+						<input
+							type="url"
+							id="website"
+							name="website"
+							placeholder="Enter website URL"
+						/>
+					</div>
+
+					<div class="form-row">
+						<div class="form-group">
+							<label for="industry">Industry</label>
+							<select
+								id="industry"
+								name="industry"
+							>
+								<option value="">Select industry</option>
+								<option value="technology">Technology</option>
+								<option value="manufacturing">Manufacturing</option>
+								<option value="healthcare">Healthcare</option>
+								<option value="finance">Finance</option>
+								<option value="education">Education</option>
+								<option value="retail">Retail</option>
+								<option value="other">Other</option>
+							</select>
+						</div>
+						<div class="form-group">
+							<label for="founded">Founded Year</label>
+							<input
+								type="number"
+								id="founded"
+								name="founded"
+								placeholder="Enter founded year"
+								min="1800"
+								max="2024"
+							/>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label for="employees">Number of Employees</label>
+						<select
+							id="employees"
+							name="employees"
+						>
+							<option value="">Select employee range</option>
+							<option value="1-10">1-10</option>
+							<option value="11-50">11-50</option>
+							<option value="51-100">51-100</option>
+							<option value="101-250">101-250</option>
+							<option value="251-500">251-500</option>
+							<option value="501-1000">501-1000</option>
+							<option value="1000+">1000+</option>
+						</select>
+					</div>
+
+					<button
+						type="submit"
+						class="submit-btn"
+					>
+						Submit Business Info
+					</button>
+					<button
+						type="button"
+						class="clear-btn"
+						onclick="clearForm('businessForm')"
+					>
+						Clear Form
+					</button>
+				</form>
+			</div>
+
+			<!-- Order Information Form -->
+			<div class="form-section">
+				<h2>🛒 Order Information</h2>
+				<form id="orderForm">
+					<div class="form-row">
+						<div class="form-group">
+							<label for="orderId">Order ID</label>
+							<input
+								type="text"
+								id="orderId"
+								name="orderId"
+								placeholder="Enter order ID"
+							/>
+						</div>
+						<div class="form-group">
+							<label for="customerName">Customer Name</label>
+							<input
+								type="text"
+								id="customerName"
+								name="customerName"
+								placeholder="Enter customer name"
+							/>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label for="customerEmail">Customer Email</label>
+						<input
+							type="email"
+							id="customerEmail"
+							name="customerEmail"
+							placeholder="Enter customer email"
+						/>
+					</div>
+
+					<div class="form-row">
+						<div class="form-group">
+							<label for="product">Product</label>
+							<input
+								type="text"
+								id="product"
+								name="product"
+								placeholder="Enter product name"
+							/>
+						</div>
+						<div class="form-group">
+							<label for="quantity">Quantity</label>
+							<input
+								type="number"
+								id="quantity"
+								name="quantity"
+								placeholder="Enter quantity"
+								min="1"
+							/>
+						</div>
+					</div>
+
+					<div class="form-row">
+						<div class="form-group">
+							<label for="unitPrice">Unit Price</label>
+							<input
+								type="text"
+								id="unitPrice"
+								name="unitPrice"
+								placeholder="Enter unit price"
+							/>
+						</div>
+						<div class="form-group">
+							<label for="total">Total</label>
+							<input
+								type="text"
+								id="total"
+								name="total"
+								placeholder="Enter total amount"
+							/>
+						</div>
+					</div>
+
+					<div class="form-group">
+						<label for="shippingAddress">Shipping Address</label>
+						<textarea
+							id="shippingAddress"
+							name="shippingAddress"
+							placeholder="Enter shipping address"
+						></textarea>
+					</div>
+
+					<div class="form-group">
+						<label for="paymentMethod">Payment Method</label>
+						<select
+							id="paymentMethod"
+							name="paymentMethod"
+						>
+							<option value="">Select payment method</option>
+							<option value="credit-card">Credit Card</option>
+							<option value="debit-card">Debit Card</option>
+							<option value="paypal">PayPal</option>
+							<option value="bank-transfer">Bank Transfer</option>
+							<option value="cash">Cash</option>
+						</select>
+					</div>
+
+					<button
+						type="submit"
+						class="submit-btn"
+					>
+						Submit Order
+					</button>
+					<button
+						type="button"
+						class="clear-btn"
+						onclick="clearForm('orderForm')"
+					>
+						Clear Form
+					</button>
+				</form>
+			</div>
+
+			<div class="navigation">
+				<a
+					href="test-data.html"
+					class="nav-link"
+					>← Back to Test Data</a
+				>
+				<a
+					href="options.html"
+					class="nav-link"
+					>Extension Settings</a
+				>
+			</div>
+		</div>
+
+		<script>
+			function clearForm(formId) {
+				const form = document.getElementById(formId);
+				if (form) {
+					form.reset();
+				}
+			}
+
+			// Prevent actual form submission for demo purposes
+			document.addEventListener('DOMContentLoaded', function () {
+				const forms = document.querySelectorAll('form');
+				forms.forEach((form) => {
+					form.addEventListener('submit', function (e) {
+						e.preventDefault();
+						alert(
+							'Form submission prevented (this is a demo). The form data would normally be submitted to your server.'
+						);
+					});
+				});
+			});
+
+			// Add visual feedback when fields are filled
+			document.addEventListener('input', function (e) {
+				if (
+					e.target.tagName === 'INPUT' ||
+					e.target.tagName === 'TEXTAREA' ||
+					e.target.tagName === 'SELECT'
+				) {
+					if (e.target.value.trim() !== '') {
+						e.target.style.backgroundColor = '#e8f5e9';
+						e.target.style.borderColor = '#4caf50';
+					} else {
+						e.target.style.backgroundColor = '';
+						e.target.style.borderColor = '#ddd';
+					}
+				}
+			});
+		</script>
+	</body>
+</html>

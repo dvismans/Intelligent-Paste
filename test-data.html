@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0"
+		/>
+		<title>Test Data - Intelligent Paste</title>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+				background-color: #f5f5f5;
+			}
+
+			.container {
+				background: white;
+				padding: 30px;
+				border-radius: 8px;
+				box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+			}
+
+			h1 {
+				color: #333;
+				text-align: center;
+				margin-bottom: 30px;
+			}
+
+			.section {
+				margin-bottom: 30px;
+				padding: 20px;
+				border: 1px solid #ddd;
+				border-radius: 6px;
+				background-color: #fafafa;
+			}
+
+			.section h2 {
+				color: #2196f3;
+				margin-top: 0;
+				margin-bottom: 15px;
+				font-size: 18px;
+			}
+
+			.data-sample {
+				background: #f8f9fa;
+				border: 1px solid #e9ecef;
+				border-radius: 4px;
+				padding: 15px;
+				margin: 10px 0;
+				font-family: monospace;
+				font-size: 14px;
+				line-height: 1.4;
+				white-space: pre-wrap;
+				position: relative;
+			}
+
+			.copy-btn {
+				position: absolute;
+				top: 10px;
+				right: 10px;
+				background: #2196f3;
+				color: white;
+				border: none;
+				padding: 5px 10px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 12px;
+			}
+
+			.copy-btn:hover {
+				background: #1976d2;
+			}
+
+			.instructions {
+				background: #e3f2fd;
+				border: 1px solid #2196f3;
+				border-radius: 4px;
+				padding: 15px;
+				margin-bottom: 20px;
+			}
+
+			.instructions h3 {
+				margin-top: 0;
+				color: #1565c0;
+			}
+
+			.navigation {
+				text-align: center;
+				margin-top: 30px;
+				padding-top: 20px;
+				border-top: 1px solid #ddd;
+			}
+
+			.nav-link {
+				display: inline-block;
+				margin: 0 10px;
+				padding: 10px 20px;
+				background: #2196f3;
+				color: white;
+				text-decoration: none;
+				border-radius: 4px;
+				transition: background-color 0.2s;
+			}
+
+			.nav-link:hover {
+				background: #1976d2;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<h1>📋 Test Data for Intelligent Paste</h1>
+
+			<div class="instructions">
+				<h3>How to Test:</h3>
+				<ol>
+					<li>Click the "Copy" button on any data sample below</li>
+					<li>Go to the <a href="test-form.html">Test Form Page</a></li>
+					<li>Press <strong>Option+P</strong> to trigger Intelligent Paste</li>
+					<li>Watch the extension intelligently fill the form fields!</li>
+				</ol>
+			</div>
+
+			<div class="section">
+				<h2>👤 Personal Information</h2>
+				<div class="data-sample">
+					<button
+						class="copy-btn"
+						onclick="copyToClipboard(this)"
+					>
+						Copy</button
+					>Name: John Smith Email: john.smith@email.com Phone: (555) 123-4567
+					Address: 123 Main Street, Anytown, CA 90210 Date of Birth: January 15,
+					1985 Company: Tech Solutions Inc. Job Title: Software Engineer
+				</div>
+			</div>
+
+			<div class="section">
+				<h2>🏢 Business Information</h2>
+				<div class="data-sample">
+					<button
+						class="copy-btn"
+						onclick="copyToClipboard(this)"
+					>
+						Copy</button
+					>Company Name: Acme Corporation Contact Person: Sarah Johnson Business
+					Email: contact@acmecorp.com Business Phone: (555) 987-6543 Website:
+					www.acmecorp.com Industry: Manufacturing Founded: 2010 Employees:
+					250-500
+				</div>
+			</div>
+
+			<div class="section">
+				<h2>🛒 Order Information</h2>
+				<div class="data-sample">
+					<button
+						class="copy-btn"
+						onclick="copyToClipboard(this)"
+					>
+						Copy</button
+					>Order ID: ORD-2024-001 Customer: Michael Davis Email:
+					m.davis@example.com Product: Wireless Headphones Quantity: 2 Unit
+					Price: $129.99 Total: $259.98 Shipping Address: 456 Oak Avenue,
+					Springfield, IL 62701 Payment Method: Credit Card
+				</div>
+			</div>
+
+			<div class="section">
+				<h2>📝 Event Registration</h2>
+				<div class="data-sample">
+					<button
+						class="copy-btn"
+						onclick="copyToClipboard(this)"
+					>
+						Copy</button
+					>Attendee: Lisa Chen Registration Email: lisa.chen@company.com Event:
+					Annual Tech Conference 2024 Session: AI and Machine Learning Dietary
+					Restrictions: Vegetarian T-Shirt Size: Medium Emergency Contact: David
+					Chen (spouse) Emergency Phone: (555) 444-3333
+				</div>
+			</div>
+
+			<div class="section">
+				<h2>🏠 Real Estate Inquiry</h2>
+				<div class="data-sample">
+					<button
+						class="copy-btn"
+						onclick="copyToClipboard(this)"
+					>
+						Copy</button
+					>Interested Buyer: Robert Wilson Contact Email: r.wilson@gmail.com
+					Phone Number: (555) 777-8888 Property Interest: 789 Elm Street Price
+					Range: $300,000 - $400,000 Bedrooms: 3-4 Preferred Move Date: Summer
+					2024 Financing: Pre-approved for mortgage Real Estate Agent: Optional
+				</div>
+			</div>
+
+			<div class="section">
+				<h2>📧 Newsletter Signup</h2>
+				<div class="data-sample">
+					<button
+						class="copy-btn"
+						onclick="copyToClipboard(this)"
+					>
+						Copy</button
+					>Subscriber: Emma Thompson Email Address: emma.t@email.com First Name:
+					Emma Last Name: Thompson Interests: Technology, Design, Business
+					Newsletter Frequency: Weekly Format Preference: HTML Location: New
+					York, NY
+				</div>
+			</div>
+
+			<div class="section">
+				<h2>🎓 Course Registration</h2>
+				<div class="data-sample">
+					<button
+						class="copy-btn"
+						onclick="copyToClipboard(this)"
+					>
+						Copy</button
+					>Student Name: Alex Rodriguez Student Email:
+					alex.rodriguez@student.edu Student ID: STU2024789 Course: Introduction
+					to Data Science Semester: Fall 2024 Academic Level: Undergraduate
+					Major: Computer Science Phone: (555) 666-7777 Emergency Contact: Maria
+					Rodriguez (mother) Emergency Phone: (555) 888-9999
+				</div>
+			</div>
+
+			<div class="navigation">
+				<a
+					href="test-form.html"
+					class="nav-link"
+					>Go to Test Form →</a
+				>
+				<a
+					href="options.html"
+					class="nav-link"
+					>Extension Settings</a
+				>
+			</div>
+		</div>
+
+		<script>
+			function copyToClipboard(button) {
+				// Get the text content of the parent element, excluding the button
+				const dataElement = button.parentElement;
+				const buttonText = button.outerHTML;
+				const fullText = dataElement.innerHTML;
+				const textToCopy = dataElement.textContent.replace('Copy', '').trim();
+
+				// Copy to clipboard
+				navigator.clipboard
+					.writeText(textToCopy)
+					.then(() => {
+						// Visual feedback
+						const originalText = button.textContent;
+						button.textContent = 'Copied!';
+						button.style.background = '#4caf50';
+
+						setTimeout(() => {
+							button.textContent = originalText;
+							button.style.background = '#2196f3';
+						}, 1500);
+					})
+					.catch((err) => {
+						console.error('Failed to copy text: ', err);
+						button.textContent = 'Error';
+						button.style.background = '#f44336';
+
+						setTimeout(() => {
+							button.textContent = 'Copy';
+							button.style.background = '#2196f3';
+						}, 1500);
+					});
+			}
+		</script>
+	</body>
+</html>

@@ -87,21 +87,44 @@ chrome.storage.sync.get(
 // Add at the top of background.js, right after the variable declarations
 chrome.commands.onCommand.addListener(async (command) => {
 	debugLog('Command received:', command);
-	if (command === 'run-intelligent-paste') {
+	if (command === 'intelligent-paste') {
 		// Get the active tab
 		const [tab] = await chrome.tabs.query({
 			active: true,
 			currentWindow: true,
 		});
 		if (tab) {
-			debugLog('Sending command to tab:', tab.id);
-			chrome.tabs
-				.sendMessage(tab.id, {
-					action: 'run-intelligent-paste',
-				})
-				.catch((error) => {
-					debugLog('Error sending command to tab:', error);
+			// Check if we can access the tab's URL
+			if (
+				tab.url.startsWith('chrome://') ||
+				tab.url.startsWith('chrome-extension://')
+			) {
+				debugLog('Cannot inject into restricted URL:', tab.url);
+				return;
+			}
+
+			debugLog('Injecting content script into tab:', tab.id);
+			try {
+				// First inject the content script
+				await chrome.scripting.executeScript({
+					target: { tabId: tab.id },
+					files: ['content.js'],
 				});
+
+				// Wait a moment for the script to initialize
+				setTimeout(() => {
+					debugLog('Sending command to tab:', tab.id);
+					chrome.tabs
+						.sendMessage(tab.id, {
+							action: 'run-intelligent-paste',
+						})
+						.catch((error) => {
+							debugLog('Error sending command to tab:', error);
+						});
+				}, 100);
+			} catch (error) {
+				debugLog('Error injecting content script:', error);
+			}
 		}
 	}
 });
